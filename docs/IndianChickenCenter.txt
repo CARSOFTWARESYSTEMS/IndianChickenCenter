@@ -1,0 +1,74 @@
+
+Indian Chicken Center
+
+Account Activation
+1. Update Customer Details - (One time while activating an account)
+2. Name of the Business: Indian Chicken Center
+3. Owner Name : Umarabba
+4. Contact Details :
+5. Google Account : (save logs, and account details in google drive)
+
+Starting Point:
+1. Shop Location: Ujire/Belthangady (Track Location)
+2. Vehicle Fuel Loading - (FuelType - Diesel)
+3. Update Fuel expenses : (Daily fuel price changing) (current price 91/ltr)
+4. Add additional details if needed : (Number of liters filled, fuel price per liter )
+
+Loading Point:
+1. Loaded chicken 5000kg * 100 Rs/kg (Both values will be changed later - provide options to update these two values)
+2. Per kg value may change in each point (like 90 Rs/kg OR 100 OR 120 etc) => 5000kg * 120 per kg = 6,00,000
+
+Order taking After Loading [SAME AS BELOW]
+
+[RouteMatics](OPTIONAL)
+
+Travel to customer location for distribution
+1. Customer1 => 2000kg * 140 Rs/kg  = 2,80,000
+2. Customer2 =>  500kg * 140 Rs/kg  =   70,000
+3. Customer3 =>  200kg * 140 Rs/kg  =   28,000
+4. Customer4 => 1000kg * 140 Rs/kg  = 1,40,000
+5. Customer5 =>  300kg * 140 Rs/kg  =   42,000
+6. Customer6 =>  870kg * 140 Rs/kg  = 1,21,800
+       Total =>  4870kg * 140 Rs/kg = 6,81,800/-
+       Wastege = Purchased 5000kg - Actual after wastage 4870kg = 130kg
+       
+Expenses Calculations
+1. Fuel : Diesel                    =   8000
+2. Laber [3 Labers]                 =   6000  (Driver, Laber1..5, )
+3. Weight Loss : 130kg * 140 Rs/kg  =  18,200 (Wastege)
+4. Vehicle Maintanance:             =
+5. Food Expenses                    =
+6. Other Expenses                   =
+                   Total Expenses   => 32,200/-
+       
+       
+Profit Calculations
+OPTION 1
+1. Purchased Load 5000kg * Selling Price : 140 Rs/kg =  7,00,000/-
+2. Less expenses: 32,200/-
+3. Amount 7,00,000 - expenses 32,200 = 6,67,800
+4. Profit = Initial Purchase price 6,00,000 - Selling Price : 6,67,800 = 67,800
+5. Total Profit = 67,800
+
+OPTION 2
+1. Total purcahsed (after wastege) 4870kg * 140 Rs/kg = 6,81,800/-
+2. Expenses : (Fuel 8000 + Laber 6000 + Other) : 14,000
+3  Total amount after expenses = 6,81,800 - 14,000 = 6,67,800
+4. Profit = Sold price 6,67,800 - Initial Purchase Rs 6,00,000 = 67,800
+
+
+Customer : Ledger entry
+
+Customer1 : [Shop name][Name][contact number]
+[Date][TotalItemsInKG][ItemPerKG][TotalAmount][PaidAmount][BalanceAmount][Comments]
+[Date][TotalItemsInKG][ItemPerKG][TotalAmount][PaidAmount][BalanceAmount 10,625][Comments - Initial Balance]
+[Date][TotalItemsInKG 63.1][ItemPerKG 128][TotalAmount 8076][PaidAmount][BalanceAmount 10,625 + 8076][Comments]
+[Date][TotalItemsInKG 153.2][ItemPerKG 118][TotalAmount 18077][PaidAmount][BalanceAmount 10,625 + 8076 + 18077]
+[Date][TotalItemsInKG][ItemPerKG][TotalAmount][PaidAmount][BalanceAmount 10,625 + 8076 +18077 = 36778]
+[Date][TotalItemsInKG][ItemPerKG][TotalAmount][PaidAmount 26000][BalanceAmount 36778 - 26000 = 10778][CashPayment]
+[Date][TotalItemsInKG][ItemPerKG][TotalAmount][PaidAmount][BalanceAmount 10778][MonthEndBalance]
+
+Generate Bill and send to customer using whatsapp
+Bill should have proper details (Balance, items purchase and paid details)
+
+
