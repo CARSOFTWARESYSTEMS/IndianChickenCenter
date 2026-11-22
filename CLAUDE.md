@@ -26,7 +26,16 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 
 ## Layout
 - `src/domain/` — pure TypeScript money engine. No React, no Firebase imports.
-- `src/domain/__tests__/` — financial tests named by plan id (F-FUEL-01 …) plus engine extras (ENG-*).
+- `src/domain/__tests__/` — financial tests named by plan id (F-FUEL-01 …), engine extras (ENG-*), Gate A decisions (G-*).
+- `src/styles/index.css` — design tokens (`--ui-*`, light/dark) mapped into Tailwind v4 via `@theme inline`
+  (bg-card, text-ink, text-ink-2, text-due, text-received, bg-accent …) plus the type scale (text-large/title/body/sub/caption/amount).
+- `src/ui/` — design system components: Button/ButtonLink, PageHeader, Section/Row, Card, Amount, Pill, StatTile,
+  EmptyState, Field, Segmented, SyncStatus, Stepper, Sheet, Icon. Use these, not ad-hoc styles.
+- `src/i18n/labels.ts` — every screen label, English + Kannada; the type makes a missing Kannada key a build error.
+  Read labels with `useT()`; never hard-code screen text.
+- `src/app/` — shell (bottom tabs < 768 px, sidebar ≥ 768 px), preferences (language, theme), install + update prompts, shortcuts.
+- `src/pages/` — the five sections, More sub-pages, the design gallery (More → Design system) and the engine check page.
+- PWA: vite-plugin-pwa (`registerType: 'prompt'`), icons generated from `public/icon.svg` by `npx pwa-assets-generator`.
 
 ## Commands
 - `npm test` — run all tests once
@@ -35,5 +44,8 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 
 ## Status
 P2 money engine built: 49 F-* + 17 ENG-* + 10 G-* tests pass. Gate A answered on 22 Nov 2026 except U-10 and U-12;
-the follow-up questions are in docs/REQUIREMENTS_TRACEABILITY.md. `src/App.tsx` is an engine check page on demo data
-(`npm run dev`, or the "vite" entry in .claude/launch.json). Next: P1 shell + design system, then P3 clickable prototype.
+the follow-up questions are in docs/REQUIREMENTS_TRACEABILITY.md.
+P1 shell + design system built (branch p1-shell): five sections, light/dark, English/Kannada, PWA with offline shell,
+install guide. Screens show structure and empty states; Save buttons stay disabled until P3.
+Run: `npm run dev` ("vite" in .claude/launch.json); production check: `npm run build` then "preview-build".
+Next: P3 clickable prototype on an in-memory demo store, then Gate B with the owner.
