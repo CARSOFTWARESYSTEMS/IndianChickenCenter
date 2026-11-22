@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { billText, buildBill, formatRupees, whatsAppLink } from '../index'
+import { billText, buildBill, DEFAULT_SETTINGS, formatRupees, whatsAppLink } from '../index'
 import { LEDGER_CUSTOMER, must, sourceLedger } from './fixtures'
 
 const OCTOBER = { from: '2026-10-01', to: '2026-10-31' }
@@ -19,7 +19,7 @@ describe('Bill and formatting', () => {
   // The check is on the decoded text instead.
   it('F-BILL-02 WhatsApp fallback opens 919876543210 with ₹ encoded and "₹10,778" intact after decoding', () => {
     const bill = must(buildBill(sourceLedger().entries, LEDGER_CUSTOMER, OCTOBER))
-    const text = billText(bill, { businessName: 'Indian Chicken Center', location: 'Ujire · Belthangady', shopName: 'Customer1' })
+    const text = billText(bill, { settings: DEFAULT_SETTINGS, shopName: 'Customer1' })
     const url = must(whatsAppLink('98765 43210', text))
 
     expect(url.startsWith('https://wa.me/919876543210?text=')).toBe(true)

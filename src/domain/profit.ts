@@ -2,7 +2,11 @@
  * Trip profit, both ways the owner wrote it (plan Part 2 §4).
  *  Option 2 (C-TXT L53–57): sales − operating expenses − purchases.
  *  Option 1 (C-TXT L46–51): loaded kg × valuation rate − wastage kg × valuation rate − operating − purchases.
- * Default valuation rate (D-03) = trip sales ÷ kg sold, kept as an exact fraction so both options match to the paisa.
+ * Valuation rate for the full load and the wastage (wastage at selling price, U-11), in this order:
+ *  1. an override passed in for this report,
+ *  2. the trip's default selling rate (owner's Gate A answer for D-03),
+ *  3. trip sales ÷ kg sold, as an exact fraction, so both options match to the paisa.
+ * When customer rates differ from the trip default, the two options differ and the difference is shown.
  */
 import type { TripSummary } from './trip'
 import type { Grams, Paise, PaisePerKg } from './units'
@@ -25,7 +29,7 @@ function roundToPaise({ num, den }: Fraction): Paise {
 
 const isZero = (f: Fraction): boolean => f.num === 0n
 
-export type ValuationSource = 'AVERAGE_SELLING_RATE' | 'OVERRIDE'
+export type ValuationSource = 'OVERRIDE' | 'TRIP_DEFAULT_RATE' | 'AVERAGE_SELLING_RATE'
 
 export interface ProfitOption1 {
   valuation: ValuationSource
@@ -94,6 +98,10 @@ export function computeProfit(summary: TripSummary, options: ProfitOptions = {})
     rateNum = BigInt(options.valuationOverridePaisePerKg)
     rateDen = 1_000n
     valuation = 'OVERRIDE'
+  } else if (summary.defaultSaleRatePaisePerKg !== undefined) {
+    rateNum = BigInt(summary.defaultSaleRatePaisePerKg)
+    rateDen = 1_000n
+    valuation = 'TRIP_DEFAULT_RATE'
   } else if (sold > 0n) {
     rateNum = sales
     rateDen = sold

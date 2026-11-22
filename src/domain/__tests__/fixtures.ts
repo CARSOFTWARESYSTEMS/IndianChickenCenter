@@ -30,6 +30,7 @@ import {
   type ExpenseCategory,
   type LabourSlot,
   type LedgerEntry,
+  type OpenTripInput,
   type PostContext,
   type Posted,
   type ProfitOptions,
@@ -41,9 +42,12 @@ import {
 } from '../index'
 
 export const OWNER = 'uid-owner'
-export const STAFF = 'uid-staff'
+export const MANAGER = 'uid-manager'
+export const DRIVER = 'uid-driver'
 export const owner = { actorId: OWNER, actorRole: 'owner' } as const
-export const staff = { actorId: STAFF, actorRole: 'staff' } as const
+export const manager = { actorId: MANAGER, actorRole: 'manager' } as const
+export const driver = { actorId: DRIVER, actorRole: 'driver' } as const
+export const VEHICLE = 'KA21AB1234'
 
 export function must<T>(result: Result<T>): T {
   if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
@@ -72,8 +76,8 @@ export class TripBuilder {
   ledger: LedgerEntry[] = []
   private seq = 0
 
-  constructor(id = 'trip-1', date = TRIP_DATE) {
-    this.trip = openTrip({ id, date, createdBy: OWNER })
+  constructor(id = 'trip-1', date = TRIP_DATE, extra: Partial<OpenTripInput> = {}) {
+    this.trip = must(openTrip([], { id, date, createdBy: OWNER, vehicleNumber: VEHICLE, ...extra }, owner))
   }
 
   get state(): TripState {
@@ -143,7 +147,7 @@ export class TripBuilder {
 
   close(opts: { online?: boolean; hasPendingWrites?: boolean } = {}) {
     const result = closeTrip(this.state, {
-      actorId: OWNER,
+      ...owner,
       closedOn: this.trip.date,
       online: opts.online ?? true,
       hasPendingWrites: opts.hasPendingWrites ?? false,

@@ -1,5 +1,5 @@
-/** Who is acting. Roles beyond the owner depend on U-07 (will staff use the app?). */
-export type Role = 'owner' | 'staff'
+/** App roles (U-07, answered at Gate A): owner = full access, manager = manager level, driver = trip details. */
+export type Role = 'owner' | 'manager' | 'driver'
 
 export type TripStatus = 'OPEN' | 'CLOSED'
 

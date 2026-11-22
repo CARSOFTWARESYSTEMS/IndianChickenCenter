@@ -28,16 +28,17 @@ import {
   type SaleEntry,
 } from '../index'
 import {
+  DRIVER,
   errorCode,
   LEDGER_CUSTOMER,
   LedgerBuilder,
+  manager,
+  MANAGER,
   must,
   owner,
   OWNER,
   sourceLedger,
   sourceTrip,
-  staff,
-  STAFF,
   TRIP_DATE,
   TripBuilder,
 } from './fixtures'
@@ -100,7 +101,7 @@ describe('Engine extras', () => {
   it('ENG-05 a closed month takes no new entries; date them in the open month instead', () => {
     const l = sourceLedger()
     expect(errorCode(l.closeMonth('2026-11', '2026-11-22'))).toBe('invalid_input') // November has not ended
-    expect(errorCode(l.closeMonth('2026-10', '2026-11-01', staff))).toBe('owner_only')
+    expect(errorCode(l.closeMonth('2026-10', '2026-11-01', manager))).toBe('not_permitted')
     must(l.closeMonth('2026-10', '2026-11-01'))
 
     const late = must(makeSale({ id: 'late', customerId: LEDGER_CUSTOMER, date: '2026-10-30', createdBy: OWNER, grams: kg('10'), ratePaisePerKg: ratePerKg('130'), policy: 'TRUNCATE_RUPEE' }))
@@ -117,14 +118,14 @@ describe('Engine extras', () => {
 
   it('ENG-07 entries must be created by the signed-in user (mirrors S-06)', () => {
     const l = sourceLedger()
-    const sale = must(makeSale({ id: 'x', customerId: LEDGER_CUSTOMER, date: '2026-10-25', createdBy: STAFF, grams: kg('1'), ratePaisePerKg: ratePerKg('130'), policy: 'TRUNCATE_RUPEE' }))
+    const sale = must(makeSale({ id: 'x', customerId: LEDGER_CUSTOMER, date: '2026-10-25', createdBy: DRIVER, grams: kg('1'), ratePaisePerKg: ratePerKg('130'), policy: 'TRUNCATE_RUPEE' }))
     expect(errorCode(l.post(sale, owner))).toBe('actor_mismatch')
   })
 
-  it('ENG-08 only the owner posts adjustments (mirrors S-08)', () => {
+  it('ENG-08 only the owner posts adjustments, not even a manager (mirrors S-08)', () => {
     const l = sourceLedger()
-    const adj = must(makeAdjustment({ id: 'adj', customerId: LEDGER_CUSTOMER, date: '2026-10-25', createdBy: STAFF, direction: 'DEBIT', amount: rupees('500'), reason: 'Crates' }))
-    expect(errorCode(l.post(adj, staff))).toBe('owner_only')
+    const adj = must(makeAdjustment({ id: 'adj', customerId: LEDGER_CUSTOMER, date: '2026-10-25', createdBy: MANAGER, direction: 'DEBIT', amount: rupees('500'), reason: 'Crates' }))
+    expect(errorCode(l.post(adj, manager))).toBe('not_permitted')
   })
 
   it('ENG-09 a closed trip is read-only: no sales, events or sale reversals (mirrors S-09)', () => {
@@ -137,7 +138,7 @@ describe('Engine extras', () => {
 
     const sale = t.ledger.find((e) => e.type === 'SALE') as SaleEntry
     const reversal = must(makeReversal(sale, { date: TRIP_DATE, createdBy: OWNER }))
-    const ctx = { ...owner, tripStatus: () => t.trip.status }
+    const ctx = { ...owner, tripInfo: () => ({ status: t.trip.status }) }
     expect(errorCode(postEntry(t.ledger, reversal, ctx))).toBe('trip_closed')
   })
 

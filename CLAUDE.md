@@ -17,7 +17,9 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - Ledger entries and trip events are append-only. Corrections are REVERSAL or ADJUSTMENT entries.
 - Balances are always derived from entries. MONTH_END_SNAPSHOT is a checkpoint and is never summed.
 - A SALE stores the exact amount (milli-paise) and the posted amount (paise) with its rounding policy id.
-  The live rounding policy is owner decision U-01; until it is set, real posting is disabled.
+  The owner chose ROUND_HALF_UP_RUPEE (U-01, Gate A); it is the Settings default. The F-LED tests keep TRUNCATE to reproduce the source.
+- Roles: owner / manager / driver, checked through `src/domain/permissions.ts`. Firestore rules must use the same table.
+- Owner answers and open follow-ups: `docs/REQUIREMENTS_TRACEABILITY.md`. Platform limits: `docs/KNOWN_LIMITATIONS.md`.
 - Fuel, purchases and orders keep exact paise (they are not bill lines).
 - "One only" rules use fixed ids: `open_<customerId>`, `rev_<originalId>`, `snap_<customerId>_<YYYY-MM>`.
 - Test expected values are literal numbers checked by hand. Never compute an expected value with engine code.
@@ -32,6 +34,6 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - `npm run dev` — Vite dev server
 
 ## Status
-P0 docs copied. P2 money engine built: 49 F-* tests + 17 ENG-* tests pass. Its deviations from the plan
-(docs/FINANCIAL_CALCULATIONS.md §3) await approval at Gate B. Gate A (owner answers U-01…U-13) is open.
-Next: P1 shell + design system, then P3 clickable prototype on demo data.
+P2 money engine built: 49 F-* + 17 ENG-* + 10 G-* tests pass. Gate A answered on 22 Nov 2026 except U-10 and U-12;
+the follow-up questions are in docs/REQUIREMENTS_TRACEABILITY.md. `src/App.tsx` is an engine check page on demo data
+(`npm run dev`, or the "vite" entry in .claude/launch.json). Next: P1 shell + design system, then P3 clickable prototype.

@@ -33,9 +33,9 @@ function formatScaled(value: number, unit: string): string {
   return `${sign}${grouped.format(divFloor(abs, 1_000))}${fraction ? `.${fraction}` : ''} ${unit}`
 }
 
-/** 63_100 → "63.1 kg" · 5_000_000 → "5,000 kg" */
-export function formatKg(grams: Grams): string {
-  return formatScaled(grams, 'kg')
+/** 63_100 → "63.1 kg" · 5_000_000 → "5,000 kg". Pass "ಕೆಜಿ" for Kannada. */
+export function formatKg(grams: Grams, unit = 'kg'): string {
+  return formatScaled(grams, unit)
 }
 
 /** 87_500 → "87.5 L" */
@@ -44,6 +44,6 @@ export function formatLitres(millilitres: Millilitres): string {
 }
 
 /** 12_800 → "₹128/kg" */
-export function formatRatePerKg(rate: PaisePerKg): string {
-  return `${formatRupees(rate)}/kg`
+export function formatRatePerKg(rate: PaisePerKg, unit = 'kg'): string {
+  return `${formatRupees(rate)}/${unit}`
 }

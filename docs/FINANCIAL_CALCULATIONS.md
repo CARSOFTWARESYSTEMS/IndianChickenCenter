@@ -1,8 +1,8 @@
 # Financial calculations — as built (P2)
 
-The money engine is plain TypeScript in `src/domain`, with no React or Firebase. It reproduces every example in `IndianChickenCenter.txt`: 67,800 profit both ways and a ledger balance of 10,778. All 49 financial tests from the plan pass, plus 17 engine tests (ENG-*).
+The money engine is plain TypeScript in `src/domain`, with no React or Firebase. It reproduces every example in `IndianChickenCenter.txt`: 67,800 profit both ways and a ledger balance of 10,778 when paise are dropped. All 49 financial tests from the plan pass, plus 17 engine tests (ENG-*) and 10 tests for the owner's Gate A answers (G-*).
 
-Status: built and tested, **not yet approved**. Section 3 lists where the engine differs from the plan. Review it at Gate B.
+Status: built and tested, **not yet approved**. Section 3 lists where the engine differs from the plan. Review it at Gate B. The owner's answers are recorded in `REQUIREMENTS_TRACEABILITY.md`.
 
 ## 1. Units
 
@@ -18,18 +18,23 @@ User input is parsed from text (`parseKg`, `parseRupees`, …), never through fl
 
 ## 2. Rules
 
-- **Rounding (U-01 open):** each SALE stores the exact value, the posted amount, the policy id and the difference. Three policies are available:
+- **Rounding (U-01: round to the rupee):** each sale stores the exact value, the posted amount, the policy id and the difference. Three policies are available:
   - `TRUNCATE_RUPEE` (matches the source ledger)
-  - `ROUND_HALF_UP_RUPEE`
+  - `ROUND_HALF_UP_RUPEE` (the owner's choice and the Settings default)
   - `EXACT_PAISE`
 
-  The live policy is `null` until the owner decides, and `makeSale` refuses to post while it is `null`.
+  Under the owner's choice, the source customer ends at ₹10,780, not ₹10,778. If the policy is ever set to `null`, posting sales stops.
+- **Payments:** cash, UPI or bank transfer, with an optional reference (UPI or UTR number). Cash stays preselected.
+- **Trip rate:** each trip has a default selling rate. Drivers sell at it; the owner or manager may change the rate on a sale.
 - **Ledger:** append-only. Balance = Σ debits − Σ credits over financial entries. A MONTH_END_SNAPSHOT is never summed. If a snapshot disagrees with a recompute, the recompute is shown and the mismatch is flagged.
-- **Trip stock:** remaining = loaded − sold − wastage. An order never moves stock. A sale beyond the remaining stock needs an explicit confirmation, which is stored on the entry.
+- **Trip stock:** remaining = loaded − sold (customer sales + shop sales) − wastage. An order never moves stock. A sale beyond the remaining stock needs an explicit confirmation, which is stored on the entry. Kg left at the end are sold at the shop or recorded as wastage (U-05).
 - **Trip close:** the trip must have network, no unsynced writes on this device, and remaining exactly 0. After close the trip is read-only.
 - **Profit:** Option 2 = sales − operating − purchases. Option 1 = (loaded − wastage) × valuation rate − operating − purchases.
-  - The default valuation rate is the trip's sales ÷ kg sold, kept as an exact fraction, so both options agree to the paisa.
-  - With an owner override, the difference is shown, never forced to zero.
+  - The valuation rate, used for both the full load and the wastage (wastage at selling price, U-11), is chosen in this order:
+    1. an override passed in for the report
+    2. the trip's default selling rate (the owner's answer for D-03)
+    3. the trip's sales ÷ kg sold, kept as an exact fraction
+  - When some customers or the shop paid a different rate, the options differ, and the difference is shown, never forced to zero.
   - Both options are provisional until the trip closes.
 - **Bill:** built only from ledger entries. Previous balance (including the opening balance) + items − paid ± reversals/adjustments = balance due.
 
@@ -65,6 +70,7 @@ User input is parsed from text (`parseKg`, `parseRupees`, …), never through fl
 | `__tests__/ledger.test.ts` | F-LED-01–12 |
 | `__tests__/bill-format.test.ts` | F-BILL-01–02, F-FMT-01 |
 | `__tests__/engine-extras.test.ts` | ENG-01–17 (input parsing, U-01 gate, fixed ids, closed month and trip, S-* rule mirrors) |
+| `__tests__/gate-a-decisions.test.ts` | G-01–09 and G-04b (rounding, payment methods, vehicles, trip rate, shop sale, labour, roles, Kannada bill, settings) |
 
 Expected values are literal numbers checked by hand, never computed by the engine. To confirm the tests can fail, the engine was broken on purpose and then restored:
 - truncating paise was swapped for rounding: 19 tests failed

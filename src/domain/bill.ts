@@ -25,7 +25,8 @@ export interface BillPayment {
 export interface BillOtherLine {
   entryId: string
   date: IsoDate
-  label: string
+  kind: 'REVERSAL' | 'ADJUSTMENT'
+  reason?: string
   signedAmount: Paise
 }
 
@@ -76,11 +77,14 @@ export function buildBill(
       case 'PAYMENT':
         payments.push({ entryId: e.id, date: e.date, amount: e.amount, method: e.method })
         break
-      case 'REVERSAL':
-        other.push({ entryId: e.id, date: e.date, label: e.reason ? `Reversal: ${e.reason}` : 'Reversal', signedAmount: signedAmount(e) })
+      case 'REVERSAL': {
+        const line: BillOtherLine = { entryId: e.id, date: e.date, kind: 'REVERSAL', signedAmount: signedAmount(e) }
+        if (e.reason !== undefined) line.reason = e.reason
+        other.push(line)
         break
+      }
       case 'ADJUSTMENT':
-        other.push({ entryId: e.id, date: e.date, label: `Adjustment: ${e.reason}`, signedAmount: signedAmount(e) })
+        other.push({ entryId: e.id, date: e.date, kind: 'ADJUSTMENT', reason: e.reason, signedAmount: signedAmount(e) })
         break
     }
   }

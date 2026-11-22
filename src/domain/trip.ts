@@ -1,20 +1,29 @@
 /**
  * One trip in the owner's order (C-TXT L11–42): Starting Point (fuel) → Loading → Orders → Distribution → Expenses → Close.
- * Trip events are append-only; corrections are REVERSAL events. Sales live in the ledger (one SALE entry per sale).
+ * Trip events are append-only; corrections are REVERSAL events. Customer sales live in the ledger (one SALE entry each).
+ *
+ * Gate A answers built in here (22 Nov 2026):
+ *  U-06 one trip a day per vehicle, several vehicles, vehicle number on every trip ·
+ *  U-05 kg left at the end are sold at the shop (SHOP_SALE) or shown as wastage ·
+ *  U-13 labour per person (Driver, Labour 1–5, names change per trip) or one total ·
+ *  D-03 (changed) each trip has a default selling rate; the owner can change the rate per customer.
  */
 import type { Actor, TripStatus } from './common'
 import { isIsoDate, type IsoDate } from './dates'
 import {
   isFinancial,
+  isPaymentMethod,
   makeSale,
   postEntry,
   reversalIdFor,
   type LedgerEntry,
+  type PaymentMethod,
   type PostStatus,
   type SaleEntry,
 } from './ledger'
+import { can, requireCapability, type Capability } from './permissions'
 import { fail, ok, type Result } from './result'
-import { toExactPaise, type RoundingPolicyId } from './rounding'
+import { isRoundingPolicy, postAmount, toExactPaise, type RoundingPolicyId } from './rounding'
 import {
   divFloor,
   isSafeNonNegativeInt,
@@ -38,6 +47,7 @@ export type LabourSlot = (typeof LABOUR_SLOTS)[number]
 export interface TripCloseSummary {
   loadedGrams: Grams
   soldGrams: Grams
+  shopSoldGrams: Grams
   wastageGrams: Grams
   purchasePaise: Paise
   salesPaise: Paise
@@ -49,7 +59,14 @@ export interface Trip {
   date: IsoDate
   status: TripStatus
   createdBy: string
-  vehicle?: string
+  /** Normalised registration, e.g. "KA21AB1234". One trip per vehicle per day. */
+  vehicleNumber: string
+  /** App user the trip is assigned to (driver role). */
+  driverId?: string
+  /** Driver's name for this trip; people change from trip to trip. */
+  driverName?: string
+  /** Selling rate set when the trip opens; later changes are DEFAULT_RATE events. */
+  defaultSaleRatePaisePerKg?: PaisePerKg
   closedBy?: string
   closedOn?: IsoDate
   closeSummary?: TripCloseSummary
@@ -93,15 +110,35 @@ export interface OrderEvent extends TripEventBase {
 export interface ExpenseEvent extends TripEventBase {
   type: 'EXPENSE'
   category: ExpenseCategory
-  /** Labour line (Driver, Labour 1–5). Per-person vs one total is owner decision U-13. */
+  /** Per-person labour line. Leave out for one labour total. A trip uses one style, not both. */
   slot?: LabourSlot
+  /** Who worked this trip (names change per trip). */
+  workerName?: string
   amount: Paise
 }
 
-/** Reconciles kg at close. Other outcomes for unsold kg (carry forward, shop sale) wait on U-05. */
+/** Weight lost in transit, shown at close. */
 export interface WastageEvent extends TripEventBase {
   type: 'WASTAGE'
   grams: Grams
+}
+
+/** Changes the trip's default selling rate (owner or manager). The latest one wins. */
+export interface DefaultRateEvent extends TripEventBase {
+  type: 'DEFAULT_RATE'
+  ratePaisePerKg: PaisePerKg
+}
+
+/** Kg left at the end of the trip, sold at the shop (U-05). Counts as sales; no customer ledger. */
+export interface ShopSaleEvent extends TripEventBase {
+  type: 'SHOP_SALE'
+  grams: Grams
+  ratePaisePerKg: PaisePerKg
+  exactMilliPaise: MilliPaise
+  amount: Paise
+  policyId: RoundingPolicyId
+  method: PaymentMethod
+  oversellConfirmed?: true
 }
 
 export interface TripReversalEvent extends TripEventBase {
@@ -110,10 +147,81 @@ export interface TripReversalEvent extends TripEventBase {
   reason?: string
 }
 
-export type TripEvent = FuelEvent | LoadingEvent | OrderEvent | ExpenseEvent | WastageEvent | TripReversalEvent
+export type TripEvent =
+  | FuelEvent
+  | LoadingEvent
+  | OrderEvent
+  | ExpenseEvent
+  | WastageEvent
+  | DefaultRateEvent
+  | ShopSaleEvent
+  | TripReversalEvent
+
+const EVENT_CAPABILITY: Record<TripEvent['type'], Capability> = {
+  FUEL: 'trip.record',
+  LOADING: 'purchase.record',
+  ORDER: 'trip.record',
+  EXPENSE: 'trip.record',
+  WASTAGE: 'trip.record',
+  DEFAULT_RATE: 'trip.setDefaultRate',
+  SHOP_SALE: 'sale.record',
+  REVERSAL: 'entry.reverse',
+}
 
 // ---------------------------------------------------------------------------
-// Builders
+// Opening a trip
+// ---------------------------------------------------------------------------
+
+const VEHICLE = /^[A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4}$/
+const BH_VEHICLE = /^\d{2}BH\d{4}[A-Z]{1,2}$/
+
+/** "ka-21 ab 1234" → "KA21AB1234". Accepts state series and BH series numbers. */
+export function normalizeVehicleNumber(input: string): Result<string> {
+  const v = input.toUpperCase().replace(/[\s-]/g, '')
+  if (!VEHICLE.test(v) && !BH_VEHICLE.test(v)) return fail('invalid_input', `"${input}" is not a vehicle registration number`)
+  return ok(v)
+}
+
+export interface OpenTripInput {
+  id: string
+  date: IsoDate
+  createdBy: string
+  vehicleNumber: string
+  driverId?: string
+  driverName?: string
+  defaultSaleRatePaisePerKg?: PaisePerKg
+}
+
+export function openTrip(existing: readonly Trip[], input: OpenTripInput, actor: Actor): Result<Trip> {
+  const allowed = requireCapability(actor, 'trip.open')
+  if (!allowed.ok) return allowed
+  if (input.createdBy !== actor.actorId) return fail('actor_mismatch', 'Trips must be opened by the signed-in user')
+  if (!isNonEmptyString(input.id)) return fail('invalid_input', 'Trip needs an id')
+  if (!isIsoDate(input.date)) return fail('invalid_input', `Invalid date "${input.date}"`)
+  const vehicle = normalizeVehicleNumber(input.vehicleNumber)
+  if (!vehicle.ok) return vehicle
+  if (existing.some((t) => t.id === input.id)) return fail('id_conflict', `Trip id ${input.id} already exists`)
+  if (existing.some((t) => t.vehicleNumber === vehicle.value && t.date === input.date)) {
+    return fail('duplicate_trip', `${vehicle.value} already has a trip on ${input.date}`)
+  }
+  if (input.defaultSaleRatePaisePerKg !== undefined && !isSafePositiveInt(input.defaultSaleRatePaisePerKg)) {
+    return fail('invalid_rate', 'Default rate must be more than ₹0/kg')
+  }
+  const trip: Trip = {
+    id: input.id,
+    date: input.date,
+    status: 'OPEN',
+    createdBy: input.createdBy,
+    vehicleNumber: vehicle.value,
+  }
+  if (input.driverId !== undefined) trip.driverId = input.driverId
+  if (input.driverName !== undefined) trip.driverName = input.driverName
+  if (input.defaultSaleRatePaisePerKg !== undefined) trip.defaultSaleRatePaisePerKg = input.defaultSaleRatePaisePerKg
+  return ok(trip)
+}
+
+// ---------------------------------------------------------------------------
+// Event builders
 // ---------------------------------------------------------------------------
 
 interface EventInput {
@@ -128,12 +236,6 @@ function eventBase(input: EventInput): TripEventBase {
   const b: TripEventBase = { id: input.id, tripId: input.tripId, date: input.date, createdBy: input.createdBy }
   if (input.note !== undefined) b.note = input.note
   return b
-}
-
-export function openTrip(input: { id: string; date: IsoDate; createdBy: string; vehicle?: string }): Trip {
-  const trip: Trip = { id: input.id, date: input.date, status: 'OPEN', createdBy: input.createdBy }
-  if (input.vehicle !== undefined) trip.vehicle = input.vehicle
-  return trip
 }
 
 /** Fuel by litres: amount = litres × price, exact paise (F-FUEL-01). */
@@ -214,23 +316,63 @@ export function makeOrder(
 }
 
 export function makeExpense(
-  input: EventInput & { category: ExpenseCategory; amount: Paise; slot?: LabourSlot },
+  input: EventInput & { category: ExpenseCategory; amount: Paise; slot?: LabourSlot; workerName?: string },
 ): Result<ExpenseEvent> {
   if (!(EXPENSE_CATEGORIES as readonly string[]).includes(input.category)) {
     return fail('invalid_input', `"${String(input.category)}" is not an expense category; fuel is entered at Starting Point`)
   }
-  if (input.slot !== undefined && (input.category !== 'LABOUR' || !(LABOUR_SLOTS as readonly string[]).includes(input.slot))) {
-    return fail('invalid_input', 'Only labour expenses take a Driver / Labour slot')
+  if ((input.slot !== undefined || input.workerName !== undefined) && input.category !== 'LABOUR') {
+    return fail('invalid_input', 'Only labour expenses take a Driver / Labour slot or a worker name')
+  }
+  if (input.slot !== undefined && !(LABOUR_SLOTS as readonly string[]).includes(input.slot)) {
+    return fail('invalid_input', `Unknown labour slot "${String(input.slot)}"`)
   }
   if (!isSafeNonNegativeInt(input.amount)) return fail('invalid_amount', 'Expense must be ₹0 or more')
   const event: ExpenseEvent = { ...eventBase(input), type: 'EXPENSE', category: input.category, amount: input.amount }
   if (input.slot !== undefined) event.slot = input.slot
+  if (input.workerName !== undefined) event.workerName = input.workerName
   return ok(event)
 }
 
 export function makeWastage(input: EventInput & { grams: Grams }): Result<WastageEvent> {
   if (!isSafePositiveInt(input.grams)) return fail('invalid_quantity', 'Wastage must be more than 0 kg')
   return ok({ ...eventBase(input), type: 'WASTAGE', grams: input.grams })
+}
+
+export function makeDefaultRate(input: EventInput & { ratePaisePerKg: PaisePerKg }): Result<DefaultRateEvent> {
+  if (!isSafePositiveInt(input.ratePaisePerKg)) return fail('invalid_rate', 'Default rate must be more than ₹0/kg')
+  return ok({ ...eventBase(input), type: 'DEFAULT_RATE', ratePaisePerKg: input.ratePaisePerKg })
+}
+
+export function makeShopSale(
+  input: EventInput & {
+    grams: Grams
+    ratePaisePerKg: PaisePerKg
+    policy: RoundingPolicyId | null
+    method?: PaymentMethod
+    oversellConfirmed?: boolean
+  },
+): Result<ShopSaleEvent> {
+  if (input.policy === null) return fail('rounding_policy_unset', 'Choose how paise are handled before posting sales (U-01)')
+  if (!isRoundingPolicy(input.policy)) return fail('unknown_policy', 'Unknown rounding policy')
+  if (!isSafePositiveInt(input.grams)) return fail('invalid_quantity', 'Weight must be more than 0 kg')
+  if (!isSafePositiveInt(input.ratePaisePerKg)) return fail('invalid_rate', 'Rate must be more than ₹0/kg')
+  const method = input.method ?? 'CASH'
+  if (!isPaymentMethod(method)) return fail('invalid_input', `Unknown payment method "${String(method)}"`)
+  const exact = multiplyExact(input.grams, input.ratePaisePerKg)
+  if (exact === null) return fail('invalid_amount', 'Sale amount is too large')
+  const event: ShopSaleEvent = {
+    ...eventBase(input),
+    type: 'SHOP_SALE',
+    grams: input.grams,
+    ratePaisePerKg: input.ratePaisePerKg,
+    exactMilliPaise: exact,
+    amount: postAmount(exact, input.policy),
+    policyId: input.policy,
+    method,
+  }
+  if (input.oversellConfirmed) event.oversellConfirmed = true
+  return ok(event)
 }
 
 export function makeTripReversal(
@@ -272,10 +414,10 @@ function validateEvent(event: TripEvent): Result<void> {
       return consistent ? ok(undefined) : fail('amount_mismatch', 'Fuel amount does not match litres × price')
     }
     case 'LOADING': {
-      const exact = multiplyExact(event.grams, event.ratePaisePerKg)
       if (!isSafePositiveInt(event.grams) || !isSafePositiveInt(event.ratePaisePerKg)) {
         return fail('invalid_quantity', 'Loading needs kg and a rate')
       }
+      const exact = multiplyExact(event.grams, event.ratePaisePerKg)
       return exact !== null && event.exactMilliPaise === exact && event.amount === toExactPaise(exact)
         ? ok(undefined)
         : fail('amount_mismatch', 'Loading amount does not match kg × rate')
@@ -292,6 +434,18 @@ function validateEvent(event: TripEvent): Result<void> {
     }
     case 'WASTAGE':
       return isSafePositiveInt(event.grams) ? ok(undefined) : fail('invalid_quantity', 'Wastage must be more than 0 kg')
+    case 'DEFAULT_RATE':
+      return isSafePositiveInt(event.ratePaisePerKg) ? ok(undefined) : fail('invalid_rate', 'Default rate must be more than ₹0/kg')
+    case 'SHOP_SALE': {
+      if (!isSafePositiveInt(event.grams) || !isSafePositiveInt(event.ratePaisePerKg)) {
+        return fail('invalid_quantity', 'Shop sale needs kg and a rate')
+      }
+      if (!isRoundingPolicy(event.policyId) || !isPaymentMethod(event.method)) return fail('invalid_input', 'Invalid shop sale')
+      const exact = multiplyExact(event.grams, event.ratePaisePerKg)
+      return exact !== null && event.exactMilliPaise === exact && event.amount === postAmount(exact, event.policyId)
+        ? ok(undefined)
+        : fail('amount_mismatch', 'Shop sale amount does not match kg × rate under its rounding policy')
+    }
     case 'REVERSAL':
       return event.id === reversalIdFor(event.reversesId)
         ? ok(undefined)
@@ -299,11 +453,23 @@ function validateEvent(event: TripEvent): Result<void> {
   }
 }
 
+function activeEvents(events: readonly TripEvent[], tripId: string): TripEvent[] {
+  const own = events.filter((e) => e.tripId === tripId)
+  const reversed = new Set(own.flatMap((e) => (e.type === 'REVERSAL' ? [e.reversesId] : [])))
+  return own.filter((e) => e.type !== 'REVERSAL' && !reversed.has(e.id))
+}
+
+function checkDriverAssignment(trip: Trip, actor: Actor): Result<void> {
+  return actor.actorRole === 'driver' && trip.driverId !== actor.actorId
+    ? fail('not_permitted', 'This trip is assigned to another driver')
+    : ok(undefined)
+}
+
 export function postTripEvent(
   trip: Trip,
   events: readonly TripEvent[],
   event: TripEvent,
-  ctx: Pick<Actor, 'actorId'>,
+  ctx: Actor,
 ): Result<{ events: TripEvent[]; event: TripEvent; status: PostStatus }> {
   const existing = events.find((e) => e.id === event.id)
   if (existing) {
@@ -315,18 +481,31 @@ export function postTripEvent(
   if (event.tripId !== trip.id) return fail('trip_not_found', 'Event belongs to a different trip')
   if (trip.status === 'CLOSED') return fail('trip_closed', 'This trip is closed; its records are read-only')
   if (event.createdBy !== ctx.actorId) return fail('actor_mismatch', 'Events must be created by the signed-in user')
+  const allowed = requireCapability(ctx, EVENT_CAPABILITY[event.type])
+  if (!allowed.ok) return allowed
+  const assigned = checkDriverAssignment(trip, ctx)
+  if (!assigned.ok) return assigned
   const valid = validateEvent(event)
   if (!valid.ok) return valid
+
   if (event.type === 'REVERSAL') {
     const original = events.find((e) => e.id === event.reversesId && e.tripId === trip.id)
     if (!original) return fail('reversal_target_missing', 'The event to reverse was not found')
     if (original.type === 'REVERSAL') return fail('cannot_reverse', 'A reversal cannot itself be reversed')
   }
+  if (event.type === 'EXPENSE' && event.category === 'LABOUR') {
+    const labour = activeEvents(events, trip.id).filter(
+      (e): e is ExpenseEvent => e.type === 'EXPENSE' && e.category === 'LABOUR',
+    )
+    if (labour.some((l) => (l.slot !== undefined) !== (event.slot !== undefined))) {
+      return fail('invalid_input', 'Use either per-person labour lines or one labour total on a trip, not both')
+    }
+  }
   return ok({ events: [...events, event], event, status: 'saved' })
 }
 
 // ---------------------------------------------------------------------------
-// Summary, stock, close
+// Summary, stock, sales, close
 // ---------------------------------------------------------------------------
 
 export type OrderStatus = 'OPEN' | 'PART' | 'DONE'
@@ -342,14 +521,23 @@ export interface OrderLine {
 export interface TripSummary {
   tripId: string
   status: TripStatus
+  vehicleNumber: string
   /** Profit stays provisional until the trip is closed (F-PRF-05). */
   provisional: boolean
+  /** Latest DEFAULT_RATE event, else the rate set when the trip opened. */
+  defaultSaleRatePaisePerKg?: PaisePerKg
   loadedGrams: Grams
   purchasePaise: Paise
   loadings: LoadingEvent[]
+  /** Customer sales (ledger) + shop sales. */
   soldGrams: Grams
   salesPaise: Paise
   sales: SaleEntry[]
+  customerSoldGrams: Grams
+  customerSalesPaise: Paise
+  shopSales: ShopSaleEvent[]
+  shopSoldGrams: Grams
+  shopSalesPaise: Paise
   wastageGrams: Grams
   /** loaded − sold − wastage. Negative means oversold. Orders never move stock. */
   remainingGrams: Grams
@@ -357,6 +545,7 @@ export interface TripSummary {
   fuel: FuelEvent[]
   expenses: ExpenseEvent[]
   expensesByCategory: Record<ExpenseCategory, Paise>
+  labourMode: 'PER_PERSON' | 'TOTAL' | null
   /** Fuel + labour + maintenance + food + other. Excludes wastage. */
   operatingPaise: Paise
   orders: OrderLine[]
@@ -368,10 +557,10 @@ export interface TripState {
   ledger: readonly LedgerEntry[]
 }
 
+const sum = <T>(items: readonly T[], f: (t: T) => number): number => items.reduce((acc, t) => acc + f(t), 0)
+
 export function summarizeTrip({ trip, events, ledger }: TripState): TripSummary {
-  const own = events.filter((e) => e.tripId === trip.id)
-  const reversedEvents = new Set(own.flatMap((e) => (e.type === 'REVERSAL' ? [e.reversesId] : [])))
-  const active = own.filter((e) => e.type !== 'REVERSAL' && !reversedEvents.has(e.id))
+  const active = activeEvents(events, trip.id)
 
   const reversedEntries = new Set(ledger.flatMap((e) => (e.type === 'REVERSAL' ? [e.reversesId] : [])))
   const sales = ledger.filter(
@@ -383,14 +572,19 @@ export function summarizeTrip({ trip, events, ledger }: TripState): TripSummary 
   const expenses = active.filter((e): e is ExpenseEvent => e.type === 'EXPENSE')
   const wastage = active.filter((e): e is WastageEvent => e.type === 'WASTAGE')
   const orders = active.filter((e): e is OrderEvent => e.type === 'ORDER')
-
-  const sum = <T>(items: readonly T[], f: (t: T) => number): number => items.reduce((acc, t) => acc + f(t), 0)
+  const shopSales = active.filter((e): e is ShopSaleEvent => e.type === 'SHOP_SALE')
+  const rates = active.filter((e): e is DefaultRateEvent => e.type === 'DEFAULT_RATE')
 
   const expensesByCategory: Record<ExpenseCategory, Paise> = { LABOUR: 0, MAINTENANCE: 0, FOOD: 0, OTHER: 0 }
   for (const e of expenses) expensesByCategory[e.category] += e.amount
+  const labour = expenses.filter((e) => e.category === 'LABOUR')
 
   const loadedGrams = sum(loadings, (l) => l.grams)
-  const soldGrams = sum(sales, (s) => s.grams)
+  const customerSoldGrams = sum(sales, (s) => s.grams)
+  const customerSalesPaise = sum(sales, (s) => s.amount)
+  const shopSoldGrams = sum(shopSales, (s) => s.grams)
+  const shopSalesPaise = sum(shopSales, (s) => s.amount)
+  const soldGrams = customerSoldGrams + shopSoldGrams
   const wastageGrams = sum(wastage, (w) => w.grams)
   const fuelPaise = sum(fuel, (f) => f.amount)
 
@@ -408,22 +602,29 @@ export function summarizeTrip({ trip, events, ledger }: TripState): TripSummary 
     return { customerId, orderedGrams, deliveredGrams, remainingGrams: Math.max(0, orderedGrams - deliveredGrams), status }
   })
 
-  return {
+  const summary: TripSummary = {
     tripId: trip.id,
     status: trip.status,
+    vehicleNumber: trip.vehicleNumber,
     provisional: trip.status !== 'CLOSED',
     loadedGrams,
     purchasePaise: sum(loadings, (l) => l.amount),
     loadings,
     soldGrams,
-    salesPaise: sum(sales, (s) => s.amount),
+    salesPaise: customerSalesPaise + shopSalesPaise,
     sales,
+    customerSoldGrams,
+    customerSalesPaise,
+    shopSales,
+    shopSoldGrams,
+    shopSalesPaise,
     wastageGrams,
     remainingGrams: loadedGrams - soldGrams - wastageGrams,
     fuelPaise,
     fuel,
     expenses,
     expensesByCategory,
+    labourMode: labour.length === 0 ? null : labour.some((l) => l.slot !== undefined) ? 'PER_PERSON' : 'TOTAL',
     operatingPaise:
       fuelPaise +
       expensesByCategory.LABOUR +
@@ -432,6 +633,40 @@ export function summarizeTrip({ trip, events, ledger }: TripState): TripSummary 
       expensesByCategory.OTHER,
     orders: orderLines,
   }
+  const defaultRate = rates.at(-1)?.ratePaisePerKg ?? trip.defaultSaleRatePaisePerKg
+  if (defaultRate !== undefined) summary.defaultSaleRatePaisePerKg = defaultRate
+  return summary
+}
+
+/**
+ * The rate a sale uses: the one entered, or the trip's default rate.
+ * Only roles with "sale.changeRate" (owner, manager) may sell at a rate other than the default.
+ */
+function resolveSaleRate(summary: TripSummary, entered: PaisePerKg | undefined, actor: Actor): Result<PaisePerKg> {
+  const defaultRate = summary.defaultSaleRatePaisePerKg
+  const mayChange = can(actor.actorRole, 'sale.changeRate')
+  if (entered === undefined) {
+    return defaultRate === undefined
+      ? fail('invalid_rate', "Set today's default rate for this trip, or enter a rate")
+      : ok(defaultRate)
+  }
+  if (!mayChange && entered !== defaultRate) {
+    return defaultRate === undefined
+      ? fail('invalid_rate', "The owner or manager must set today's rate first")
+      : fail('not_permitted', 'Only the owner or manager can change the rate for a customer', { defaultRate })
+  }
+  return ok(entered)
+}
+
+function checkStock(summary: TripSummary, grams: Grams, confirmed: boolean | undefined): Result<boolean> {
+  const oversold = grams > summary.remainingGrams
+  if (oversold && !confirmed) {
+    return fail('exceeds_stock', 'This sale is more than the stock left on the vehicle', {
+      remainingGrams: summary.remainingGrams,
+      requestedGrams: grams,
+    })
+  }
+  return ok(oversold)
 }
 
 export interface SaleCommand {
@@ -441,18 +676,20 @@ export interface SaleCommand {
   date: IsoDate
   createdBy: string
   grams: Grams
-  ratePaisePerKg: PaisePerKg
+  /** Leave out to sell at the trip's default rate. */
+  ratePaisePerKg?: PaisePerKg
   comment?: string
-  /** The owner tapped "Sell more than stock" (D-04). */
+  /** The owner or manager tapped "Sell more than stock" (D-04). */
   oversellConfirmed?: boolean
 }
 
-/** Records a sale on a trip: stock check (no silent overselling), then one SALE ledger entry. */
+/** Records a customer sale on a trip: rate check, stock check (no silent overselling), then one SALE ledger entry. */
 export function recordTripSale(
   state: TripState,
   cmd: SaleCommand,
   ctx: Actor & { policy: RoundingPolicyId | null },
 ): Result<{ ledger: LedgerEntry[]; entry: SaleEntry; status: PostStatus; oversold: boolean }> {
+  const summary = summarizeTrip(state)
   const existing = state.ledger.find((e) => e.id === cmd.id)
   if (existing) {
     const same =
@@ -460,21 +697,21 @@ export function recordTripSale(
       existing.tripId === state.trip.id &&
       existing.customerId === cmd.customerId &&
       existing.grams === cmd.grams &&
-      existing.ratePaisePerKg === cmd.ratePaisePerKg &&
+      existing.ratePaisePerKg === (cmd.ratePaisePerKg ?? existing.ratePaisePerKg) &&
       existing.date === cmd.date
     if (!same) return fail('id_conflict', `A different entry already uses id ${cmd.id}`)
     return ok({ ledger: [...state.ledger], entry: existing, status: 'already-saved', oversold: !!existing.oversellConfirmed })
   }
   if (state.trip.status === 'CLOSED') return fail('trip_closed', 'This trip is closed; its records are read-only')
+  const allowed = requireCapability(ctx, 'sale.record')
+  if (!allowed.ok) return allowed
+  const assigned = checkDriverAssignment(state.trip, ctx)
+  if (!assigned.ok) return assigned
 
-  const summary = summarizeTrip(state)
-  const oversold = cmd.grams > summary.remainingGrams
-  if (oversold && !cmd.oversellConfirmed) {
-    return fail('exceeds_stock', 'This sale is more than the stock left on the vehicle', {
-      remainingGrams: summary.remainingGrams,
-      requestedGrams: cmd.grams,
-    })
-  }
+  const rate = resolveSaleRate(summary, cmd.ratePaisePerKg, ctx)
+  if (!rate.ok) return rate
+  const stock = checkStock(summary, cmd.grams, cmd.oversellConfirmed)
+  if (!stock.ok) return stock
 
   const saleInput: Parameters<typeof makeSale>[0] = {
     id: cmd.id,
@@ -482,10 +719,10 @@ export function recordTripSale(
     date: cmd.date,
     createdBy: cmd.createdBy,
     grams: cmd.grams,
-    ratePaisePerKg: cmd.ratePaisePerKg,
+    ratePaisePerKg: rate.value,
     policy: ctx.policy,
     tripId: state.trip.id,
-    oversellConfirmed: oversold,
+    oversellConfirmed: stock.value,
   }
   if (cmd.comment !== undefined) saleInput.comment = cmd.comment
   const sale = makeSale(saleInput)
@@ -494,26 +731,88 @@ export function recordTripSale(
   const posted = postEntry(state.ledger, sale.value, {
     actorId: ctx.actorId,
     actorRole: ctx.actorRole,
-    tripStatus: (id) => (id === state.trip.id ? state.trip.status : undefined),
+    tripInfo: (id) =>
+      id === state.trip.id
+        ? state.trip.driverId === undefined
+          ? { status: state.trip.status }
+          : { status: state.trip.status, driverId: state.trip.driverId }
+        : undefined,
   })
   if (!posted.ok) return posted
-  return ok({ ledger: posted.value.entries, entry: posted.value.entry, status: posted.value.status, oversold })
+  return ok({ ledger: posted.value.entries, entry: posted.value.entry, status: posted.value.status, oversold: stock.value })
+}
+
+export interface ShopSaleCommand {
+  id: string
+  date: IsoDate
+  createdBy: string
+  grams: Grams
+  ratePaisePerKg?: PaisePerKg
+  method?: PaymentMethod
+  note?: string
+  oversellConfirmed?: boolean
+}
+
+/** Sells kg left on the vehicle at the shop (U-05), with the same rate and stock checks as a customer sale. */
+export function recordShopSale(
+  state: TripState,
+  cmd: ShopSaleCommand,
+  ctx: Actor & { policy: RoundingPolicyId | null },
+): Result<{ events: TripEvent[]; event: ShopSaleEvent; status: PostStatus; oversold: boolean }> {
+  const existing = state.events.find((e) => e.id === cmd.id)
+  if (existing) {
+    const same =
+      existing.type === 'SHOP_SALE' &&
+      existing.grams === cmd.grams &&
+      existing.ratePaisePerKg === (cmd.ratePaisePerKg ?? existing.ratePaisePerKg) &&
+      existing.date === cmd.date
+    if (!same) return fail('id_conflict', `A different event already uses id ${cmd.id}`)
+    return ok({ events: [...state.events], event: existing, status: 'already-saved', oversold: !!existing.oversellConfirmed })
+  }
+  if (state.trip.status === 'CLOSED') return fail('trip_closed', 'This trip is closed; its records are read-only')
+  const summary = summarizeTrip(state)
+  const rate = resolveSaleRate(summary, cmd.ratePaisePerKg, ctx)
+  if (!rate.ok) return rate
+  const stock = checkStock(summary, cmd.grams, cmd.oversellConfirmed)
+  if (!stock.ok) return stock
+
+  const input: Parameters<typeof makeShopSale>[0] = {
+    id: cmd.id,
+    tripId: state.trip.id,
+    date: cmd.date,
+    createdBy: cmd.createdBy,
+    grams: cmd.grams,
+    ratePaisePerKg: rate.value,
+    policy: ctx.policy,
+    oversellConfirmed: stock.value,
+  }
+  if (cmd.method !== undefined) input.method = cmd.method
+  if (cmd.note !== undefined) input.note = cmd.note
+  const event = makeShopSale(input)
+  if (!event.ok) return event
+  const posted = postTripEvent(state.trip, state.events, event.value, ctx)
+  if (!posted.ok) return posted
+  return ok({ events: posted.value.events, event: event.value, status: posted.value.status, oversold: stock.value })
 }
 
 /**
  * Closes a trip (F-INV-02, D-11). Needs the network and no unsynced writes on this device,
- * and every loaded kg accounted for (remaining = 0) through sales and explicit wastage lines.
+ * and every loaded kg accounted for (remaining = 0) through customer sales, shop sales and wastage.
  */
 export function closeTrip(
   state: TripState,
-  ctx: { actorId: string; closedOn: IsoDate; online: boolean; hasPendingWrites: boolean },
+  ctx: Actor & { closedOn: IsoDate; online: boolean; hasPendingWrites: boolean },
 ): Result<Trip> {
   if (state.trip.status === 'CLOSED') return fail('trip_closed', 'This trip is already closed')
+  const allowed = requireCapability(ctx, 'trip.close')
+  if (!allowed.ok) return allowed
   if (!ctx.online) return fail('not_online', 'Connect to the internet to close the trip')
   if (ctx.hasPendingWrites) return fail('pending_writes', 'Some entries are still saving; wait until they reach the cloud')
   const s = summarizeTrip(state)
   if (s.remainingGrams > 0) {
-    return fail('stock_not_reconciled', 'Some loaded kg are not accounted for yet', { remainingGrams: s.remainingGrams })
+    return fail('stock_not_reconciled', 'Some loaded kg are not accounted for: sell them at the shop or record wastage', {
+      remainingGrams: s.remainingGrams,
+    })
   }
   if (s.remainingGrams < 0) {
     return fail('oversold', 'More kg were sold than loaded; correct the sales or loadings first', {
@@ -528,6 +827,7 @@ export function closeTrip(
     closeSummary: {
       loadedGrams: s.loadedGrams,
       soldGrams: s.soldGrams,
+      shopSoldGrams: s.shopSoldGrams,
       wastageGrams: s.wastageGrams,
       purchasePaise: s.purchasePaise,
       salesPaise: s.salesPaise,

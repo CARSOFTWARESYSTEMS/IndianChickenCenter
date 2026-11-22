@@ -20,6 +20,7 @@ npm run dev
 
 ## Status
 
-- **P2 money engine:** built. All 49 financial tests from the plan pass, plus 17 engine tests.
+- **P2 money engine:** built. All 49 financial tests from the plan pass, plus 17 engine tests and 10 tests for the owner's answers.
+- **Gate A:** answered on 22 Nov 2026 (see `docs/REQUIREMENTS_TRACEABILITY.md`), with a few follow-up questions.
+- **`npm run dev`:** shows an engine check page on the source examples. It is not the final design.
 - **Next:** the P1 shell and the P3 clickable prototype.
-- **Gate A:** the owner's answers (U-01…U-13) are still open.

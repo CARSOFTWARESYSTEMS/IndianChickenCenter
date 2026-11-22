@@ -4,6 +4,7 @@
  */
 import type { Actor, Direction, TripStatus } from './common'
 import { isIsoDate, isMonthKey, monthOf, type IsoDate, type MonthKey } from './dates'
+import { requireCapability, type Capability } from './permissions'
 import { fail, ok, type Result } from './result'
 import { isRoundingPolicy, postAmount, type RoundingPolicyId } from './rounding'
 import {
@@ -16,8 +17,20 @@ import {
 } from './units'
 import { canonical, isNonEmptyString } from './util'
 
-/** Cash only for now; UPI / bank transfer is enhancement E-01. */
-export type PaymentMethod = 'CASH'
+/** Cash, UPI and bank transfer (E-01 approved at Gate A). Cash stays preselected (D-10). */
+export const PAYMENT_METHODS = ['CASH', 'UPI', 'BANK_TRANSFER'] as const
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+
+export function isPaymentMethod(value: unknown): value is PaymentMethod {
+  return (PAYMENT_METHODS as readonly unknown[]).includes(value)
+}
+
+/** Passbook wording per method; "CashPayment" is the source's own (C-TXT L68). */
+const PAYMENT_COMMENT: Record<PaymentMethod, string> = {
+  CASH: 'CashPayment',
+  UPI: 'UpiPayment',
+  BANK_TRANSFER: 'BankTransfer',
+}
 
 interface EntryBase {
   id: string
@@ -168,7 +181,9 @@ export function makePayment(
   input: CommonInput & { amount: Paise; method?: PaymentMethod; reference?: string; tripId?: string },
 ): Result<PaymentEntry> {
   if (!isSafePositiveInt(input.amount)) return fail('invalid_amount', 'Payment must be more than ₹0')
-  const entry: PaymentEntry = { ...base(input), type: 'PAYMENT', amount: input.amount, method: input.method ?? 'CASH' }
+  const method = input.method ?? 'CASH'
+  if (!isPaymentMethod(method)) return fail('invalid_input', `Unknown payment method "${String(method)}"`)
+  const entry: PaymentEntry = { ...base(input), type: 'PAYMENT', amount: input.amount, method }
   if (input.reference !== undefined) entry.reference = input.reference
   if (input.tripId !== undefined) entry.tripId = input.tripId
   return ok(entry)
@@ -245,7 +260,7 @@ function validateShape(entry: LedgerEntry): Result<void> {
     }
     case 'PAYMENT':
       if (!isSafePositiveInt(entry.amount)) return fail('invalid_amount', 'Payment must be more than ₹0')
-      if (entry.method !== 'CASH') return fail('invalid_input', 'Only cash payments are enabled (E-01 is off)')
+      if (!isPaymentMethod(entry.method)) return fail('invalid_input', 'Payment method must be Cash, UPI or Bank transfer')
       return ok(undefined)
     case 'OPENING_BALANCE':
       if (entry.id !== openingBalanceIdFor(entry.customerId)) return fail('invalid_input', 'Opening balance id must be open_<customerId>')
@@ -272,9 +287,25 @@ function validateShape(entry: LedgerEntry): Result<void> {
   }
 }
 
+/** What the ledger needs to know about a trip an entry belongs to. */
+export interface TripAccess {
+  status: TripStatus
+  /** User the trip is assigned to; a driver may only post on their own trip. */
+  driverId?: string
+}
+
 export interface PostContext extends Actor {
-  /** Status of a trip by id; needed when an entry carries a tripId. */
-  tripStatus?: (tripId: string) => TripStatus | undefined
+  /** Looks up a trip by id; needed when an entry carries a tripId. */
+  tripInfo?: (tripId: string) => TripAccess | undefined
+}
+
+const CAPABILITY_FOR: Record<LedgerEntry['type'], Capability> = {
+  OPENING_BALANCE: 'customer.manage',
+  SALE: 'sale.record',
+  PAYMENT: 'payment.record',
+  REVERSAL: 'entry.reverse',
+  ADJUSTMENT: 'ledger.adjust',
+  MONTH_END_SNAPSHOT: 'month.close',
 }
 
 export type PostStatus = 'saved' | 'already-saved'
@@ -298,10 +329,17 @@ function latestSnapshotOf(entries: readonly LedgerEntry[]): MonthEndSnapshot | u
 }
 
 function checkTrip(tripId: string | undefined, ctx: PostContext): Result<void> {
-  if (tripId === undefined) return ok(undefined)
-  const status = ctx.tripStatus?.(tripId)
-  if (status === undefined) return fail('trip_not_found', `Trip ${tripId} not found`)
-  if (status === 'CLOSED') return fail('trip_closed', 'This trip is closed; its records are read-only')
+  if (tripId === undefined) {
+    return ctx.actorRole === 'driver'
+      ? fail('not_permitted', 'A driver records sales and payments only on their assigned trip')
+      : ok(undefined)
+  }
+  const trip = ctx.tripInfo?.(tripId)
+  if (trip === undefined) return fail('trip_not_found', `Trip ${tripId} not found`)
+  if (trip.status === 'CLOSED') return fail('trip_closed', 'This trip is closed; its records are read-only')
+  if (ctx.actorRole === 'driver' && trip.driverId !== ctx.actorId) {
+    return fail('not_permitted', 'This trip is assigned to another driver')
+  }
   return ok(undefined)
 }
 
@@ -332,6 +370,8 @@ export function postEntry<E extends LedgerEntry>(
   }
 
   if (entry.createdBy !== ctx.actorId) return fail('actor_mismatch', 'Entries must be created by the signed-in user')
+  const allowed = requireCapability(ctx, CAPABILITY_FOR[entry.type])
+  if (!allowed.ok) return allowed
   const shape = validateShape(entry)
   if (!shape.ok) return shape
 
@@ -339,7 +379,6 @@ export function postEntry<E extends LedgerEntry>(
   const append = (): Result<Posted<E>> => ok({ entries: [...book, entry], entry, status: 'saved' })
 
   if (entry.type === 'MONTH_END_SNAPSHOT') {
-    if (ctx.actorRole !== 'owner') return fail('owner_only', 'Only the owner can close a month (D-12)')
     if (entry.month >= monthOf(entry.date)) return fail('invalid_input', `${entry.month} has not ended yet`)
     return append()
   }
@@ -374,14 +413,13 @@ export function postEntry<E extends LedgerEntry>(
       if (entry.amount !== original.amount || entry.direction === directionOf(original)) {
         return fail('reversal_amount_mismatch', 'A reversal must mirror the original amount')
       }
-      if (original.type === 'SALE' || original.type === 'PAYMENT') {
+      if ((original.type === 'SALE' || original.type === 'PAYMENT') && original.tripId !== undefined) {
         const trip = checkTrip(original.tripId, ctx)
         if (!trip.ok) return trip
       }
       return append()
     }
     case 'ADJUSTMENT':
-      if (ctx.actorRole !== 'owner') return fail('owner_only', 'Only the owner can post an adjustment (D-12)')
       return append()
   }
 }
@@ -503,7 +541,7 @@ export function passbook(book: readonly LedgerEntry[], customerId: string): Pass
       case 'PAYMENT':
         running += signedAmount(e)
         row.paidAmount = e.amount
-        row.comments = e.comment ?? 'CashPayment'
+        row.comments = e.comment ?? (e.reference ? `${PAYMENT_COMMENT[e.method]} ${e.reference}` : PAYMENT_COMMENT[e.method])
         break
       case 'REVERSAL': {
         running += signedAmount(e)

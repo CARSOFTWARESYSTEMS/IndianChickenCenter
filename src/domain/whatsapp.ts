@@ -1,23 +1,15 @@
 /**
- * WhatsApp text fallback (plan "WhatsApp bill"): opens the customer's chat with a ready summary.
- * A wa.me link cannot attach the PDF; the PDF goes through the share sheet (P6).
+ * Bill text for WhatsApp, in English or Kannada.
+ * A wa.me link opens the customer's chat with this text ready; it cannot attach the PDF,
+ * which goes through the phone's share sheet (P6).
  */
 import type { Bill } from './bill'
+import { BILL_LABELS } from './billLabels'
 import { formatIndianDate } from './dates'
 import { formatKg, formatRatePerKg, formatRupees } from './format'
-import { fail, ok, type Result } from './result'
-
-/** Accepts 10-digit Indian mobiles, with or without +91 / 0 and spaces; returns "91XXXXXXXXXX". */
-export function normalizeIndianMobile(input: string): Result<string> {
-  const digits = input.replace(/\D/g, '')
-  let national: string
-  if (digits.length === 10) national = digits
-  else if (digits.length === 11 && digits.startsWith('0')) national = digits.slice(1)
-  else if (digits.length === 12 && digits.startsWith('91')) national = digits.slice(2)
-  else return fail('invalid_phone', `"${input}" is not a 10-digit Indian mobile number`)
-  if (!/^[6-9]/.test(national)) return fail('invalid_phone', `"${input}" is not an Indian mobile number`)
-  return ok(`91${national}`)
-}
+import { formatIndianMobile, normalizeIndianMobile } from './phone'
+import { ok, type Result } from './result'
+import type { BusinessSettings, Language } from './settings'
 
 export function whatsAppLink(phone: string, text: string): Result<string> {
   const number = normalizeIndianMobile(phone)
@@ -25,37 +17,66 @@ export function whatsAppLink(phone: string, text: string): Result<string> {
   return ok(`https://wa.me/${number.value}?text=${encodeURIComponent(text)}`)
 }
 
+function printablePhone(raw: string): string {
+  const n = normalizeIndianMobile(raw)
+  return n.ok ? formatIndianMobile(n.value) : raw
+}
+
+/** Business header for bills, from Settings: only the details the owner chose to print (U-04). */
+export function billHeaderLines(settings: BusinessSettings, language: Language): string[] {
+  const L = BILL_LABELS[language]
+  const { contact, print } = settings
+  const lines = [language === 'kn' && settings.businessNameKn ? settings.businessNameKn : settings.businessName]
+  lines.push(settings.shopLocation.label)
+  if (print.ownerName) lines.push(contact.ownerName)
+  if (print.phones && contact.phones.length > 0) lines.push(`${L.phone}: ${contact.phones.map(printablePhone).join(', ')}`)
+  if (print.whatsapp && contact.whatsapp) lines.push(`${L.whatsapp}: ${printablePhone(contact.whatsapp)}`)
+  if (print.email && contact.email) lines.push(`${L.email}: ${contact.email}`)
+  if (print.address && contact.address) lines.push(contact.address)
+  if (settings.gst.enabled && settings.gst.gstin) lines.push(`GSTIN: ${settings.gst.gstin}`)
+  return lines
+}
+
 export interface BillTextContext {
-  businessName: string
-  location?: string
+  settings: BusinessSettings
+  /** Defaults to the bill language in Settings. */
+  language?: Language
   shopName: string
   customerName?: string
+  /** Visible number, assigned online (D-07). Without one the text is titled "Statement". */
   billNumber?: string
 }
 
 export function billText(bill: Bill, ctx: BillTextContext): string {
-  const lines: string[] = [ctx.businessName]
-  if (ctx.location) lines.push(ctx.location)
+  const language = ctx.language ?? ctx.settings.languages.bill
+  const L = BILL_LABELS[language]
+  const lines = billHeaderLines(ctx.settings, language)
   lines.push('')
-  lines.push(`${ctx.billNumber ? `Bill ${ctx.billNumber}` : 'Statement'}: ${ctx.shopName}${ctx.customerName ? ` (${ctx.customerName})` : ''}`)
+  lines.push(`${ctx.billNumber ? `${L.bill} ${ctx.billNumber}` : L.statement}: ${ctx.shopName}${ctx.customerName ? ` (${ctx.customerName})` : ''}`)
   lines.push(
     bill.from === bill.to
-      ? `Date: ${formatIndianDate(bill.from)}`
-      : `Period: ${formatIndianDate(bill.from)} to ${formatIndianDate(bill.to)}`,
+      ? `${L.date}: ${formatIndianDate(bill.from)}`
+      : L.period(formatIndianDate(bill.from), formatIndianDate(bill.to)),
   )
-  lines.push(`Previous balance: ${formatRupees(bill.previousBalance)}`)
+  lines.push(`${L.previousBalance}: ${formatRupees(bill.previousBalance)}`)
   for (const item of bill.items) {
     lines.push(
-      `${formatIndianDate(item.date)}  ${formatKg(item.grams)} × ${formatRatePerKg(item.ratePaisePerKg)} = ${formatRupees(item.amount)}`,
+      `${formatIndianDate(item.date)}  ${formatKg(item.grams, L.kg)} × ${formatRatePerKg(item.ratePaisePerKg, L.kg)} = ${formatRupees(item.amount)}`,
     )
   }
-  lines.push(`Items: ${formatKg(bill.itemsGrams)}, ${formatRupees(bill.itemsAmount)}`)
-  lines.push(`Paid: ${formatRupees(bill.paid)}`)
-  for (const o of bill.other) lines.push(`${o.label}: ${formatRupees(o.signedAmount)}`)
+  lines.push(`${L.items}: ${formatKg(bill.itemsGrams, L.kg)}, ${formatRupees(bill.itemsAmount)}`)
+  for (const p of bill.payments) {
+    lines.push(`${formatIndianDate(p.date)}  ${L.payment[p.method]}: ${formatRupees(p.amount)}`)
+  }
+  lines.push(`${L.paid}: ${formatRupees(bill.paid)}`)
+  for (const o of bill.other) {
+    lines.push(`${L[o.kind]}${o.reason ? ` (${o.reason})` : ''}: ${formatRupees(o.signedAmount)}`)
+  }
   lines.push(
     bill.currentBalance >= 0
-      ? `Balance due: ${formatRupees(bill.currentBalance)}`
-      : `Advance: ${formatRupees(-bill.currentBalance)}`,
+      ? `${L.balanceDue}: ${formatRupees(bill.currentBalance)}`
+      : `${L.advance}: ${formatRupees(-bill.currentBalance)}`,
   )
+  if (ctx.settings.gst.enabled && ctx.settings.gst.legalText) lines.push('', ctx.settings.gst.legalText)
   return lines.join('\n')
 }
