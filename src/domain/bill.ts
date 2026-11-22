@@ -3,7 +3,7 @@
  * Built only from ledger entries, so a bill can never disagree with the passbook.
  */
 import { financialYearOf, isIsoDate, type IsoDate } from './dates'
-import { isFinancial, signedAmount, type LedgerEntry, type PaymentMethod } from './ledger'
+import { balanceBefore, isFinancial, signedAmount, type LedgerEntry, type LedgerWindow, type PaymentMethod } from './ledger'
 import { fail, ok, type Result } from './result'
 import type { Grams, Paise, PaisePerKg } from './units'
 
@@ -48,18 +48,30 @@ export interface Bill {
   currentBalance: Paise
 }
 
+/**
+ * With a window (a ledger read from the cloud), the previous balance comes from the latest month-end snapshot
+ * (balanceBefore); the period must start inside the window.
+ */
 export function buildBill(
   book: readonly LedgerEntry[],
   customerId: string,
   period: { from: IsoDate; to: IsoDate },
+  window?: LedgerWindow,
 ): Result<Bill> {
   if (!isIsoDate(period.from) || !isIsoDate(period.to) || period.from > period.to) {
     return fail('invalid_input', 'Bill period needs a valid start and end date')
   }
-  const entries = book.filter((e) => e.customerId === customerId && isFinancial(e) && e.date <= period.to)
+  const own = book.filter((e) => e.customerId === customerId && isFinancial(e) && e.date <= period.to)
   const inPeriod = (date: IsoDate): boolean => date >= period.from && date <= period.to
 
   let previousBalance = 0
+  let entries = own
+  if (window) {
+    const before = balanceBefore(book, customerId, period.from, window)
+    if (!before.ok) return before
+    previousBalance = before.value
+    entries = own.filter((e) => e.date >= period.from)
+  }
   const items: BillItem[] = []
   const payments: BillPayment[] = []
   const other: BillOtherLine[] = []

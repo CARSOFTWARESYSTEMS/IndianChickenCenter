@@ -4,7 +4,7 @@
  */
 import { NavLink, Outlet } from 'react-router'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import { DemoBadge } from '../pages/more'
+import { StatusBadge } from './SyncBadge'
 import { useAppState } from '../store/store'
 import type { Labels } from '../i18n/labels'
 import { Button } from '../ui/Button'
@@ -56,7 +56,7 @@ function Sidebar({ online }: { online: boolean }) {
         <p className="text-body font-semibold">{settings.businessName}</p>
         <p className="text-sub text-ink-2">{settings.shopLocation.label}</p>
         <div className="mt-2">
-          <DemoBadge />
+          <StatusBadge />
         </div>
       </div>
       <nav aria-label="Sections">
@@ -160,7 +160,7 @@ export function AppShell() {
         {!online && <OfflineBanner />}
         <main className="mx-auto w-full max-w-3xl px-4 pb-[calc(96px+env(safe-area-inset-bottom))] md:px-6 md:pb-12 lg:px-8">
           <div className="flex justify-end pt-2 md:hidden print:hidden">
-            <DemoBadge />
+            <StatusBadge />
           </div>
           <Outlet />
         </main>

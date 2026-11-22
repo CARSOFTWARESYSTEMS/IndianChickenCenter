@@ -29,6 +29,7 @@ import {
   type Result,
   type Trip,
 } from '../domain'
+import { tripIdFor } from '../data/docs'
 import { newId } from '../store/ids'
 import { addFuel, addTripEvent, recordSale, shopSale, startTrip } from '../store/commands'
 import { allowed, openTripsToday, tripSummaryOf } from '../store/selectors'
@@ -75,7 +76,6 @@ export function StartTripSheet({ onClose }: { onClose: Close }) {
   const today = useToday()
   const navigate = useNavigate()
   const { error, save } = useSave(onClose)
-  const [id] = useState(() => newId('trip'))
   const [fuelId] = useState(() => newId('fuel'))
   const busy = new Set(s.trips.filter((tr) => tr.date === today).map((tr) => tr.vehicleNumber))
   const [vehicle, setVehicle] = useState(() => s.vehicles.find((v) => !busy.has(v)) ?? '')
@@ -91,10 +91,12 @@ export function StartTripSheet({ onClose }: { onClose: Close }) {
   const canSave = vehicleOk && ratePaise !== undefined && (!fuel.filled || fuelInput !== undefined)
 
   const onSave = () => {
-    if (ratePaise === undefined) return
+    const normalized = normalizeVehicleNumber(vehicle)
+    if (ratePaise === undefined || !normalized.ok) return
     const r = dispatch(
       startTrip({
-        id,
+        // One trip per vehicle per day (U-06): the id says which, so the cloud refuses a second one.
+        id: tripIdFor(today, normalized.value),
         date: today,
         vehicleNumber: vehicle,
         defaultSaleRatePaisePerKg: ratePaise,

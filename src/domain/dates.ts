@@ -43,6 +43,13 @@ export function previousMonth(month: MonthKey): MonthKey {
   return m === 1 ? `${year - 1}-12` : `${year}-${String(m - 1).padStart(2, '0')}`
 }
 
+/** "2026-12" → "2027-01". */
+export function nextMonth(month: MonthKey): MonthKey {
+  const year = Number(month.slice(0, 4))
+  const m = Number(month.slice(5, 7))
+  return m === 12 ? `${year + 1}-01` : `${year}-${String(m + 1).padStart(2, '0')}`
+}
+
 export function firstDayOfMonth(month: MonthKey): IsoDate {
   return `${month}-01`
 }

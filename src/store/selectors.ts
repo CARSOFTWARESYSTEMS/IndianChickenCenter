@@ -2,7 +2,7 @@
 import {
   can,
   computeProfit,
-  customerBalance,
+  currentBalance,
   isFinancial,
   passbook,
   summarizeTrip,
@@ -59,11 +59,11 @@ export function customerById(s: AppState, id: string | undefined): Customer | un
 }
 
 export function balanceOf(s: AppState, customerId: string): Paise {
-  return customerBalance(s.ledger, customerId).balance
+  return currentBalance(s.ledger, customerId, s.ledgerWindow)
 }
 
 export function passbookOf(s: AppState, customerId: string): PassbookRow[] {
-  return passbook(s.ledger, customerId)
+  return passbook(s.ledger, customerId, s.ledgerWindow)
 }
 
 /** Entries that have been reversed (their ids), to mark them in lists. */

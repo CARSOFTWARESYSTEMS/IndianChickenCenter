@@ -38,7 +38,6 @@ import {
   type PaisePerLitre,
   type PaymentMethod,
   type PostContext,
-  type Role,
   type Result,
   type SaleCommand,
   type ShopSaleCommand,
@@ -73,14 +72,6 @@ export function setActor(userId: string) {
   return (s: AppState): Result<Next<void>> => done({ ...s, actorId: userId }, undefined)
 }
 
-/** Signed in (P4): the demo data is used as the demo person with the signed-in role. */
-export function actAs(role: Role) {
-  return (s: AppState): Result<Next<void>> => {
-    const user = s.users.find((u) => u.role === role)
-    if (!user) return fail('not_permitted', `No demo user with the ${role} role`)
-    return user.id === s.actorId ? done(s, undefined) : done({ ...s, actorId: user.id }, undefined)
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Customers
@@ -260,13 +251,14 @@ export function reverseTripEvent(eventId: string, reason: string, date: IsoDate)
   }
 }
 
-export function finishTrip(tripId: string, date: IsoDate, online: boolean) {
+/** Closing needs the network and nothing from this phone still waiting to reach the cloud (D-11). */
+export function finishTrip(tripId: string, date: IsoDate, online: boolean, hasPendingWrites = false) {
   return (s: AppState): Result<Next<void>> => {
     const trip = s.trips.find((t) => t.id === tripId)
     if (!trip) return fail('trip_not_found', 'Trip not found')
     const closed = closeTrip(
       { trip, events: s.tripEvents, ledger: s.ledger },
-      { ...actorOf(s), closedOn: date, online, hasPendingWrites: false },
+      { ...actorOf(s), closedOn: date, online, hasPendingWrites },
     )
     if (!closed.ok) return closed
     return done({ ...s, trips: s.trips.map((t) => (t.id === tripId ? closed.value : t)) }, undefined)
@@ -326,10 +318,13 @@ export function closeMonthForAll(month: MonthKey, date: IsoDate) {
     let ledger: LedgerEntry[] = s.ledger
     let count = 0
     for (const customer of s.customers) {
-      const hasEntries = ledger.some((e) => e.customerId === customer.id && isFinancial(e) && e.date <= end)
+      // A cloud window may not hold a quiet customer's old entries, but it holds their last snapshot.
+      const hasEntries = ledger.some(
+        (e) => e.customerId === customer.id && e.date <= end && (isFinancial(e) || s.ledgerWindow !== undefined),
+      )
       const alreadyClosed = ledger.some((e) => e.id === snapshotIdFor(customer.id, month))
       if (!hasEntries || alreadyClosed) continue
-      const closed = closeMonth(ledger, { customerId: customer.id, month, date, createdBy: ctx.actorId }, ctx)
+      const closed = closeMonth(ledger, { customerId: customer.id, month, date, createdBy: ctx.actorId }, ctx, s.ledgerWindow)
       if (!closed.ok) return closed
       ledger = closed.value.entries
       count++
@@ -341,11 +336,6 @@ export function closeMonthForAll(month: MonthKey, date: IsoDate) {
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
-
-/** Business details as saved in the cloud (owner set-up). Loading them needs no role; saving does. */
-export function loadSettings(settings: BusinessSettings) {
-  return (s: AppState): Result<Next<void>> => done({ ...s, settings }, undefined)
-}
 
 export function saveSettings(settings: BusinessSettings) {
   return (s: AppState): Result<Next<void>> => {

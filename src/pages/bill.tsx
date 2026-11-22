@@ -59,7 +59,7 @@ export function BillPage() {
       : period === 'lastMonth'
         ? { from: firstDayOfMonth(previousMonth(thisMonth)), to: lastDayOfMonth(previousMonth(thisMonth)) }
         : { from: firstDayOfMonth(thisMonth), to: today }
-  const built = buildBill(s.ledger, customer.id, range)
+  const built = buildBill(s.ledger, customer.id, range, s.ledgerWindow)
   if (!built.ok) return null
   const bill = built.value
   const L = BILL_LABELS[language]

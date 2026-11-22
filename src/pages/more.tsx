@@ -7,10 +7,9 @@ import { useToast } from '../app/toast'
 import { errorText } from '../i18n/labels'
 import { parsePricePerLitre, parseRatePerKg, ROUNDING_POLICIES, type BusinessSettings, type Language, type RoundingPolicyId } from '../domain'
 import { saveSettings, setActor } from '../store/commands'
-import { settingsWrites } from '../data/docs'
 import { useSession } from '../firebase/session'
 import { allowed, currentUser } from '../store/selectors'
-import { dispatch, getState, resetDemo, useAppState } from '../store/store'
+import { dispatch, resetDemo, useAppState } from '../store/store'
 import { StickyAction } from '../ui/StickyAction'
 import { Button } from '../ui/Button'
 import { Chips, Field, Segmented, Switch } from '../ui/controls'
@@ -51,31 +50,29 @@ export function MorePage() {
           </div>
         </Section>
       )}
-      <Section header={<span className="inline-flex items-center gap-2">{t.demo.badge}</span>} footer={t.demo.note}>
-        <div className="space-y-3 p-3">
-          {!signedIn && (
-            <>
-              <p className="px-1 text-sub text-ink-2">{t.demo.actingAs}</p>
-              <Chips
-                label={t.demo.actingAs}
-                value={s.actorId}
-                onChange={(id) => dispatch(setActor(id))}
-                options={s.users.map((u) => ({ value: u.id, label: `${t.roles[u.role]} · ${u.name}` }))}
-              />
-            </>
-          )}
-          <Button
-            block
-            variant="destructive"
-            onClick={() => {
-              resetDemo()
-              toast(t.demo.resetDone)
-            }}
-          >
-            {t.demo.reset}
-          </Button>
-        </div>
-      </Section>
+      {!signedIn && (
+        <Section header={<span className="inline-flex items-center gap-2">{t.demo.badge}</span>} footer={t.demo.note}>
+          <div className="space-y-3 p-3">
+            <p className="px-1 text-sub text-ink-2">{t.demo.actingAs}</p>
+            <Chips
+              label={t.demo.actingAs}
+              value={s.actorId}
+              onChange={(id) => dispatch(setActor(id))}
+              options={s.users.map((u) => ({ value: u.id, label: `${t.roles[u.role]} · ${u.name}` }))}
+            />
+            <Button
+              block
+              variant="destructive"
+              onClick={() => {
+                resetDemo()
+                toast(t.demo.resetDone)
+              }}
+            >
+              {t.demo.reset}
+            </Button>
+          </div>
+        </Section>
+      )}
       <Section header={t.settings.language}>
         <div className="p-2">
           <LanguageSwitch />
@@ -102,7 +99,6 @@ export function BusinessProfilePage() {
   const t = useT()
   const s = useAppState()
   const toast = useToast()
-  const { session, write } = useSession()
   const mayEdit = allowed(s, 'settings.edit')
   const [draft, setDraft] = useState<BusinessSettings>(s.settings)
   const [phones, setPhones] = useState(s.settings.contact.phones.join(', '))
@@ -134,15 +130,7 @@ export function BusinessProfilePage() {
     const r = dispatch(saveSettings(next))
     if (!r.ok) return setError(errorText(t, r.error) + (r.error.code === 'invalid_input' || r.error.code === 'invalid_phone' ? ` (${r.error.message})` : ''))
     setError(undefined)
-    if (session.status !== 'ready') {
-      toast(t.profile.saved)
-      return
-    }
-    // Signed in: business details live in the cloud (set up at activation); other screens follow from there.
-    write(settingsWrites(getState().settings, session.account.uid)).then(
-      () => toast(t.profile.saved),
-      () => setError(t.people.failed),
-    )
+    toast(t.profile.saved)
   }
 
   return (

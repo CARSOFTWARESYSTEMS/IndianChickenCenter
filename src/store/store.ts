@@ -1,7 +1,7 @@
 /**
- * The demo store: one state object, saved on this device so a demo survives the phone closing the browser.
- * Screens only call dispatch(command) and read useAppState(); P5 replaces this file with Firestore repositories
- * behind the same commands.
+ * The app's one store. Screens only call dispatch(command) and read useAppState().
+ *  - Demo mode: one state object, saved on this device (P3).
+ *  - Signed in (P5): the cloud store (cloud.ts) attaches itself; the same commands then save to Firestore.
  */
 import { useSyncExternalStore } from 'react'
 import { ok, type Result } from '../domain'
@@ -28,17 +28,40 @@ function save(state: AppState): void {
   }
 }
 
-let state: AppState = load() ?? seedDemoState()
+export interface Next<T> {
+  state: AppState
+  value: T
+}
+
+export type Command<T> = (s: AppState) => Result<Next<T>>
+
+/** A store that keeps AppState somewhere other than this device's demo copy. */
+export interface Backend {
+  getState(): AppState
+  dispatch<T>(command: Command<T>): Result<T>
+}
+
+let demo: AppState | undefined
+let backend: Backend | undefined
 const listeners = new Set<() => void>()
 
-function commit(next: AppState): void {
-  state = next
-  save(next)
+function demoState(): AppState {
+  demo ??= load() ?? seedDemoState()
+  return demo
+}
+
+/** Called by a backend whenever its state changes. */
+export function storeChanged(): void {
   listeners.forEach((l) => l())
 }
 
+export function attachBackend(next: Backend | undefined): void {
+  backend = next
+  storeChanged()
+}
+
 export function getState(): AppState {
-  return state
+  return backend ? backend.getState() : demoState()
 }
 
 function subscribe(listener: () => void): () => void {
@@ -50,19 +73,19 @@ export function useAppState(): AppState {
   return useSyncExternalStore(subscribe, getState, getState)
 }
 
-export interface Next<T> {
-  state: AppState
-  value: T
-}
-
 /** Runs a command against the current state; only a successful command changes anything. */
-export function dispatch<T>(command: (s: AppState) => Result<Next<T>>): Result<T> {
-  const result = command(state)
+export function dispatch<T>(command: Command<T>): Result<T> {
+  if (backend) return backend.dispatch(command)
+  const result = command(demoState())
   if (!result.ok) return result
-  commit(result.value.state)
+  demo = result.value.state
+  save(demo)
+  storeChanged()
   return ok(result.value.value)
 }
 
 export function resetDemo(): void {
-  commit(seedDemoState())
+  demo = seedDemoState()
+  save(demo)
+  storeChanged()
 }

@@ -22,14 +22,14 @@ npm test
 ```
 
 ```bash
-npm run test:rules
+npm run test:emulator
 ```
 
 ```bash
 npm run dev
 ```
 
-`npm run test:rules` starts the Firestore emulator, so it needs Java 21 or newer.
+`npm run test:emulator` starts the Firestore emulator, so it needs Java 21 or newer.
 
 ## Status
 
@@ -46,7 +46,12 @@ npm run dev
   - On the owner's first sign-in, a short set-up asks for business details, bill rounding and bill language.
   - Firestore rules repeat the money engine on the server: posted entries are never edited, every amount is re-checked in whole paise, and each role can do only its own part. A driver cannot read purchase rates or profit.
   - Without Firebase settings the app stays in demo mode, as before. See `docs/SETUP_AND_DEPLOY.md`.
-- **Next:** Gate B with the owner, then P5 (trips, customers and the ledger saved in Firestore).
+- **P5 saving in the cloud and offline:** built.
+  - Signed in, customers, trips and the ledger are saved in Firestore through the same screens and money rules.
+  - Every entry is saved on the phone first and sent when there is internet. A badge shows "Saved to cloud", "Syncing", "Saved on phone" or "Needs attention". Entries still on the phone say so under their line.
+  - If the cloud refuses an entry (say the trip was closed on another phone), it appears under "Needs attention" with the reason, and balances leave it out.
+  - Each phone reads last month and this month, and balances start from the last month-end close. This keeps daily reads inside the free plan.
+- **Next:** Gate B with the owner, then P6 (bills as PDF, bill numbers).
 
 ## Trying the prototype (Gate B)
 

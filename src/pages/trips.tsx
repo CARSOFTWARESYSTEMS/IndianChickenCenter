@@ -27,6 +27,7 @@ import {
   visibleTrips,
 } from '../store/selectors'
 import { dispatch, useAppState } from '../store/store'
+import { isPending, pendingCount, useSync } from '../store/sync'
 import { StickyAction } from '../ui/StickyAction'
 import { Button } from '../ui/Button'
 import { Stepper, type Step } from '../ui/controls'
@@ -138,6 +139,7 @@ export function TripDetailPage() {
   const today = useToday()
   const online = useOnline()
   const toast = useToast()
+  const sync = useSync()
   const { tripId } = useParams()
   const [params, setParams] = useSearchParams()
   const [reversal, setReversal] = useState<Reversal>()
@@ -171,6 +173,11 @@ export function TripDetailPage() {
   const name = (id: string) => customerById(s, id)?.shopName ?? id
   const payments = s.ledger.filter((e): e is Extract<LedgerEntry, { type: 'PAYMENT' }> => e.type === 'PAYMENT' && e.tripId === trip.id)
   const ownEvents = s.tripEvents.filter((e) => e.tripId === trip.id && e.type !== 'REVERSAL')
+  // An entry this phone has not yet had confirmed says so under its line (plan principle 5).
+  const onPhone = (text: string | undefined, path: string) =>
+    isPending(sync, path) ? [text, t.status.savedOnPhone].filter(Boolean).join(' · ') : text
+  const ev = (id: string) => `trips/${trip.id}/events/${id}`
+  const led = (id: string) => `ledgerEntries/${id}`
 
   const reverseEvent = (e: TripEvent, line: string) =>
     mayReverse && !reversedEvents.has(e.id)
@@ -202,7 +209,7 @@ export function TripDetailPage() {
       primary = {
         label: t.trip.closeTrip,
         onClick: () => {
-          const r = dispatch(finishTrip(trip.id, today, online))
+          const r = dispatch(finishTrip(trip.id, today, online, pendingCount(sync) > 0 || sync.pendingPaths.size > 0))
           if (r.ok) toast(t.common.saved)
           else setCloseError(errorText(t, r.error))
         },
@@ -265,7 +272,7 @@ export function TripDetailPage() {
           .filter((e): e is Extract<TripEvent, { type: 'FUEL' }> => e.type === 'FUEL')
           .map((e) => {
             const line = `${formatLitres(e.millilitres)} × ${formatRupees(e.pricePaisePerLitre)}/L`
-            return <Row key={e.id} title={t.trip.fuel} subtitle={line} value={formatRupees(e.amount)} struck={reversedEvents.has(e.id)} onClick={reverseEvent(e, `${line} = ${formatRupees(e.amount)}`)} />
+            return <Row key={e.id} title={t.trip.fuel} subtitle={onPhone(line, ev(e.id))} value={formatRupees(e.amount)} struck={reversedEvents.has(e.id)} onClick={reverseEvent(e, `${line} = ${formatRupees(e.amount)}`)} />
           })}
       </Section>
 
@@ -279,7 +286,7 @@ export function TripDetailPage() {
               <Row
                 key={e.id}
                 title={e.loadingPoint ?? t.trip.loadingPoint}
-                subtitle={line}
+                subtitle={onPhone(line, ev(e.id))}
                 value={showPurchase ? formatRupees(e.amount) : undefined}
                 struck={reversedEvents.has(e.id)}
                 onClick={reverseEvent(e, line)}
@@ -310,7 +317,7 @@ export function TripDetailPage() {
               <Row
                 key={e.id}
                 title={name(e.customerId)}
-                subtitle={line}
+                subtitle={onPhone(line, led(e.id))}
                 value={formatRupees(e.amount)}
                 struck={reversedEntries.has(e.id)}
                 onClick={reverseEntry(e, `${name(e.customerId)} · ${line} = ${formatRupees(e.amount)}`)}
@@ -324,7 +331,7 @@ export function TripDetailPage() {
             <Row
               key={e.id}
               title={name(e.customerId)}
-              subtitle={t.methods[e.method]}
+              subtitle={onPhone(t.methods[e.method], led(e.id))}
               value={<Amount paise={e.amount} tone="received" />}
               struck={reversedEntries.has(e.id)}
               onClick={reverseEntry(e, `${name(e.customerId)} · ${t.methods[e.method]} ${formatRupees(e.amount)}`)}
@@ -344,7 +351,7 @@ export function TripDetailPage() {
               <Row
                 key={e.id}
                 title={title}
-                subtitle={e.slot ? t.trip.categories.LABOUR : undefined}
+                subtitle={onPhone(e.slot ? t.trip.categories.LABOUR : undefined, ev(e.id))}
                 value={formatRupees(e.amount)}
                 struck={reversedEvents.has(e.id)}
                 onClick={reverseEvent(e, `${title} ${formatRupees(e.amount)}`)}
@@ -363,7 +370,7 @@ export function TripDetailPage() {
               <Row
                 key={e.id}
                 title={e.type === 'SHOP_SALE' ? t.trip.shopSale : t.trip.wastageLine}
-                subtitle={line}
+                subtitle={onPhone(line, ev(e.id))}
                 value={e.type === 'SHOP_SALE' ? formatRupees(e.amount) : undefined}
                 struck={reversedEvents.has(e.id)}
                 onClick={reverseEvent(e, line)}

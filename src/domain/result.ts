@@ -27,6 +27,8 @@ export type DomainErrorCode =
   | 'not_online'
   | 'pending_writes'
   | 'invalid_phone'
+  | 'outside_window'
+  | 'not_saved'
 
 export interface DomainError {
   code: DomainErrorCode

@@ -5,15 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:emulators": "vite --mode emulators",
+    "dev:emulators": "vite --mode emulators --host 127.0.0.1",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:rules": "sh scripts/firebase.sh emulators:exec --only firestore --project demo-icc 'vitest run -c vitest.rules.config.ts'",
+    "test:emulator": "sh scripts/firebase.sh emulators:exec --only firestore --project demo-icc 'vitest run -c vitest.emulator.config.ts'",
+    "test:rules": "sh scripts/firebase.sh emulators:exec --only firestore --project demo-icc 'vitest run -c vitest.emulator.config.ts tests/rules'",
     "rules:generate": "WRITE_RULES=1 vitest run src/data/__tests__/rules-constants.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "emulators": "sh scripts/firebase.sh emulators:start --only auth,firestore --project demo-icc",
+    "emulators": "sh scripts/firebase.sh emulators:start --only auth,firestore --project demo-icc --import .emulator-data --export-on-exit",
     "deploy:rules": "sh scripts/firebase.sh deploy --only firestore:rules,firestore:indexes"
   },
   "dependencies": {

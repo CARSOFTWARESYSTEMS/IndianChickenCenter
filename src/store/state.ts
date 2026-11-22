@@ -25,6 +25,7 @@ import {
   type BusinessSettings,
   type Customer,
   type LedgerEntry,
+  type LedgerWindow,
   type Result,
   type Role,
   type Trip,
@@ -48,6 +49,8 @@ export interface AppState {
   trips: Trip[]
   tripEvents: TripEvent[]
   ledger: LedgerEntry[]
+  /** Cloud only: the ledger holds entries from this date on plus month-end snapshots (P5). Demo data is complete. */
+  ledgerWindow?: LedgerWindow
 }
 
 export const DEMO_USERS: AppUser[] = [

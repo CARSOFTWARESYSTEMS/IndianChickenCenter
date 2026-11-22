@@ -21,6 +21,7 @@ import { addCustomer, editCustomer, recordPayment, reverseLedgerEntry } from '..
 import { newId } from '../store/ids'
 import { allowed, balanceOf, customerById, customersWithBalance, openTripsToday, passbookOf, reversedIds } from '../store/selectors'
 import { dispatch, useAppState } from '../store/store'
+import { isPending, useSync } from '../store/sync'
 import { Button, ButtonLink } from '../ui/Button'
 import { Field, Segmented } from '../ui/controls'
 import { FormSheet } from '../ui/FormSheet'
@@ -228,12 +229,15 @@ function describe(t: ReturnType<typeof useT>, row: PassbookRow, entry: LedgerEnt
       return { title: row.comments, amount: row.totalAmount ?? 0 }
     case 'MONTH_END_SNAPSHOT':
       return { title: t.customers.monthEnd }
+    case 'BROUGHT_FORWARD':
+      return { title: t.customers.broughtForward }
   }
 }
 
 export function CustomerDetailPage() {
   const t = useT()
   const s = useAppState()
+  const sync = useSync()
   const today = useToday()
   const { customerId } = useParams()
   const [sheet, setSheet] = useState<'edit' | 'payment' | 'sale'>()
@@ -308,7 +312,11 @@ export function CustomerDetailPage() {
               <Row
                 key={row.entryId}
                 title={d.title}
-                subtitle={formatIndianDate(row.date)}
+                subtitle={
+                  isPending(sync, `ledgerEntries/${row.entryId}`)
+                    ? `${formatIndianDate(row.date)} · ${t.status.savedOnPhone}`
+                    : formatIndianDate(row.date)
+                }
                 value={
                   <span className="block">
                     {d.amount === undefined ? formatRupees(row.balance) : <Amount paise={d.amount} tone={d.amount < 0 ? 'received' : 'neutral'} />}
@@ -352,7 +360,10 @@ export function CustomerDetailPage() {
                     <td className="px-3 py-2 text-right">{row.totalAmount === undefined ? '' : formatRupees(row.totalAmount)}</td>
                     <td className="px-3 py-2 text-right text-received">{row.paidAmount === undefined ? '' : formatRupees(row.paidAmount)}</td>
                     <td className="px-3 py-2 text-right font-semibold">{formatRupees(row.balance)}</td>
-                    <td className="px-3 py-2">{row.comments}</td>
+                    <td className="px-3 py-2">
+                      {row.type === 'BROUGHT_FORWARD' ? t.customers.broughtForward : row.comments}
+                      {isPending(sync, `ledgerEntries/${row.entryId}`) && <span className="ml-2 text-caption text-due">{t.status.savedOnPhone}</span>}
+                    </td>
                   </tr>
                 )
               })}

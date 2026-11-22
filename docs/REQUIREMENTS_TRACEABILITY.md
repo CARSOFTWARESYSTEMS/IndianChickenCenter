@@ -42,6 +42,7 @@ The full 36-row traceability matrix stays in `Indian_Chicken_Center_Plan.md` (Pa
 | D-24 | An opening balance is entered only when the customer is added | Rules cannot see a customer's other entries; saving both together keeps the opening balance first |
 | D-25 | A trip-rate change is never reversed; the owner or manager sets the rate again | The trip keeps its current rate, and the rules check drivers' sales against it (ENG-18) |
 | D-26 | Month-end closes go in order for each customer | The rules then need only one "closed through" month per customer |
+| D-27 | Each phone reads last month and this month (plus month-end snapshots), not the whole history | Keeps daily reads inside the free plan while months are closed on time (KNOWN_LIMITATIONS.md) |
 
 ### Role split (D-17)
 
@@ -77,6 +78,7 @@ The full 36-row traceability matrix stays in `Indian_Chicken_Center_Plan.md` (Pa
 5. **Rate per customer.** Is a change on the sale enough, or should each customer keep their own saved rate for future trips?
 6. **Shop sales.** Does the owner type the shop rate each time, or should Settings hold a shop rate?
 7. Not asked yet: U-10 (opening balance as an advance) and U-12 (colour, logo).
-8. Still open from the build:
+8. **Daily reads (D-27).** If the business grows past the free plan's 50,000 reads a day, should the app move to the pay-as-you-go plan (a few rupees a day at this size), or load last month only when someone opens it?
+9. Still open from the build:
    - How should a sale be corrected after its trip is closed?
    - What happens to a sale that syncs after its trip closed?

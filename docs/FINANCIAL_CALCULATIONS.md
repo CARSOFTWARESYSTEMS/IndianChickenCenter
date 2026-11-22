@@ -66,6 +66,18 @@ User input is parsed from text (`parseKg`, `parseRupees`, …), never through fl
 
 Rules cannot add up documents, so stock, balances and the labour-style check (D-20) stay in the app (KNOWN_LIMITATIONS.md).
 
+## 3b. Balances in the cloud: a window plus snapshots (P5)
+
+A phone does not read the whole ledger (free-plan reads). It reads every entry dated on or after the **window start**, plus month-end snapshots. The window starts on the first day of last month, or earlier for any customer whose months are not all closed (then it starts the month after their last closed month, or at the month they were added).
+
+- **Balance now** = latest snapshot's closing balance + every entry after that month. The demo (complete) ledger still uses a full recompute.
+- **Balance before a date** (a bill's "previous balance", a passbook's first line) = balance now − every entry dated on or after that date. All of those are loaded, so no older entry is needed.
+- **Month-end close** = previous snapshot + the entries of the months after it. The entry count carries forward the same way.
+- A passbook that starts at the window opens with a **Brought forward** line, unless the customer has no history before the window.
+- A bill for a period that starts before the window is refused ("Older entries are not on this phone").
+
+Tests LW-01–05 check each of these against the full ledger on the source example (₹10,778 in October, ₹11,178 after November). SY-07 checks a month-end close in the emulator with October's entries not loaded.
+
 ## 4. Open questions found while building
 
 - **Correcting a sale after the trip closes.** A closed trip is read-only, so its sales cannot be reversed (ENG-09). Options:
@@ -86,9 +98,12 @@ Rules cannot add up documents, so stock, balances and the labour-style check (D-
 | `__tests__/bill-format.test.ts` | F-BILL-01–02, F-FMT-01 |
 | `__tests__/engine-extras.test.ts` | ENG-01–18 (input parsing, U-01 gate, fixed ids, closed month and trip, S-* rule mirrors, rate change not reversible) |
 | `__tests__/gate-a-decisions.test.ts` | G-01–09 and G-04b (rounding, payment methods, vehicles, trip rate, shop sale, labour, roles, Kannada bill, settings) |
+| `__tests__/ledger-window.test.ts` | LW-01–05 and LW-03b: balance, previous balance, passbook, bill and month end from a window plus snapshots |
 | `src/data/__tests__/docs.test.ts` | DOC-01–07: how records are stored (loading split, rate change, trip id, close totals, month-end closure, invites) |
+| `src/data/__tests__/diff.test.ts` | DIFF-01–07: what each command saves, and in which batches |
 | `src/data/__tests__/rules-constants.test.ts` | RC-01–02: the role table and value lists in `firestore.rules` match the engine |
-| `tests/rules/*.test.ts` (emulator, `npm run test:rules`) | S-01–S-10 from the plan, R-01–R-15 (drivers, visibility, invites, settings, customers, vehicles, trips, loading, rates, month end, opening balance, fuel, shop sales, orders) |
+| `tests/rules/*.test.ts` (emulator) | S-01–S-10 from the plan, R-01–R-16 (drivers, visibility, invites, settings, customers, vehicles, trips, loading, rates, month end, opening balance, fuel, shop sales, orders, cross-trip reads) |
+| `tests/sync/sync.test.ts` (emulator) | SY-01–SY-06 from the plan, SY-07–09 (month end from a window, loading rate kept apart, saves left over after a restart) |
 
 Expected values are literal numbers checked by hand, never computed by the engine. To confirm the tests can fail, the engine was broken on purpose and then restored:
 - truncating paise was swapped for rounding: 19 tests failed

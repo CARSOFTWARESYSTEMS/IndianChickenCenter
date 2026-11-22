@@ -36,28 +36,37 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - `src/app/` — shell (bottom tabs < 768 px, sidebar ≥ 768 px), preferences (language, theme), install + update prompts, shortcuts.
 - `src/store/` — app state and commands. `state.ts` (types + demo seed built through the engine), `commands.ts`
   (every change goes through engine functions; screens call `dispatch(command)`), `selectors.ts` (read views),
-  `store.ts` (demo store saved in localStorage; P5 replaces it with Firestore behind the same commands).
+  `store.ts` (one store: demo state in localStorage, or a backend attached by the cloud store).
+  `cloud.ts` (P5, lazy-loaded): Firestore listeners → AppState over a window (last month + this month + snapshots,
+  `ledgerWindow` on AppState); dispatch runs the command, `src/data/diff.ts` turns before/after into batched DocWrites,
+  an overlay keeps the screen steady until listeners show them. `sync.ts`: per-save status (pending → saved, or
+  attention with the reason from re-running the command), pending paths for "Saved on phone" markers.
 - `src/pages/` — today, trips (+ tripSheets), customers, bill, ledger, more (profile, settings, help), people (owner),
   auth (sign-in, not on the team, owner set-up), design gallery, engine check.
   Sheets are rendered only while open, so each opening gets fresh ids (plan §5).
 - `src/data/docs.ts` — how engine records are stored in Firestore (paths, document shapes, `DocWrite` batches). Pure TS.
+  `src/data/diff.ts` — the writes a command made (new trips first and alone; at most 4 records per batch for the rules' look-up limit).
   Purchase rates live in `trips/{id}/purchases`, money totals in `trips/{id}/totals/close` (drivers cannot read them).
   `src/data/rulesConstants.ts` generates the role table and value lists in `firestore.rules` from `src/domain`.
 - `src/firebase/` — `config.ts` (env), `client.ts` (lazy-loaded Auth + Firestore with persistentLocalCache, `commitWrites`),
   `session.tsx` (session states: demo, signedOut, notAuthorised, needsActivation, waitingForOwner, ready).
-  `src/app/AuthGate.tsx` shows the app only when ready (or in demo mode) and maps the signed-in role onto the demo store.
+  `src/app/AuthGate.tsx` shows the app only when ready (or in demo mode) and starts the cloud store once signed in.
+  `src/app/SyncBadge.tsx` — "Saved to cloud / Syncing / Saved on phone / Needs attention" with its sheet.
 - `firestore.rules` — server copy of the engine rules (append-only, integer money checks, roles). Tests: `tests/rules/`.
+  `firestore.indexes.json` — indexes the cloud store's queries need. Sync tests: `tests/sync/` (real SDK, emulator).
   No Firebase settings in env → demo mode, exactly as P3. `.env.emulators` → local emulators (open http://127.0.0.1:5174).
 - PWA: vite-plugin-pwa (`registerType: 'prompt'`), icons generated from `public/icon.svg` by `npx pwa-assets-generator`.
 
 ## Commands
 - `npm test` — run all unit tests once (no emulator)
-- `npm run test:rules` — security-rule tests in the Firestore emulator (Java 21+; `scripts/firebase.sh` finds it on a Mac)
+- `npm run test:emulator` — security-rule and sync tests in the Firestore emulator (Java 21+; `scripts/firebase.sh`
+  finds it on a Mac); `npm run test:rules` runs the rule tests only. Stop running emulators first (port 8080).
 - `npm run rules:generate` — rewrite the generated block in `firestore.rules` after changing roles or value lists
 - `npm run typecheck`
 - `npm run dev` — Vite dev server, demo mode
-- `npm run emulators` + `npm run dev:emulators -- --port 5174` — sign-in against local Auth/Firestore emulators;
-  `node scripts/emulator-add-user.mjs <email> owner "<name>"` makes an emulator account the owner
+- `npm run emulators` + `npm run dev:emulators -- --port 5174` — the app against local Auth/Firestore emulators at
+  http://127.0.0.1:5174 (data kept in `.emulator-data/`); `node scripts/emulator-add-user.mjs <email> owner "<name>"`
+  makes an emulator account the owner
 - `npm run deploy:rules -- --project <id>` — deploy rules (needs `npx firebase login`; ask before deploying)
 
 ## Status
@@ -72,4 +81,8 @@ P4 auth + rules built (branch p4-auth-rules): Google sign-in, users/{uid} roles,
 owner set-up wizard, sign-out clears the phone's Firestore cache. Business settings are saved in Firestore; trips,
 customers and the ledger are still demo data until P5. Tests: 49 F-* + 18 ENG-* + 10 G-* + 4 CU/DT + 5 ST-* + 7 DOC-*
 + 2 RC-* = 95 unit tests, plus 27 emulator rule tests (S-01–S-10, R-01–R-15). Setup: docs/SETUP_AND_DEPLOY.md.
-Next: Gate B with the owner (README "Trying the prototype"), then P5 Firestore persistence behind the same commands.
+P5 persistence + offline built (branch p5-persistence): signed in, customers, trips and the ledger live in Firestore
+behind the same commands; entries save on the phone first; sync badge and Needs attention; balances from month-end
+snapshots over a read window (D-27). Tests: 108 unit (adds LW-* and DIFF-*) and 37 emulator (28 rule tests up to R-16,
+9 sync tests SY-01–SY-09); the test map is in docs/FINANCIAL_CALCULATIONS.md.
+Next: Gate B with the owner (README "Trying the prototype"), then P6 bills (PDF, numbering).

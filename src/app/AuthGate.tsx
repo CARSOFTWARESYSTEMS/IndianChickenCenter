@@ -1,36 +1,45 @@
 /**
  * Shows the app only to a signed-in person with a role (P4), or to anyone in demo mode (no Firebase settings).
- * While signed in, the demo data is used as the demo person with the same role, and business details come from
- * the cloud. Trips, customers and the ledger move to Firestore in P5.
+ * Once signed in, it starts the cloud store (P5): the same commands then read and save in Firestore.
  */
 import { useEffect, type ReactNode } from 'react'
+import { firebaseSettings } from '../firebase/config'
 import { useSession } from '../firebase/session'
 import { ActivationPage, LoadingScreen, NotAuthorisedPage, SignInPage, WaitingForOwnerPage } from '../pages/auth'
-import { actAs, loadSettings } from '../store/commands'
-import { currentUser } from '../store/selectors'
-import { dispatch, useAppState } from '../store/store'
+import { useSync } from '../store/sync'
 
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { session } = useSession()
-  const s = useAppState()
+  const { session, services } = useSession()
+  const sync = useSync()
+  const uid = session.status === 'ready' ? session.account.uid : undefined
   const role = session.status === 'ready' ? session.user.role : undefined
-  const settings = session.status === 'ready' ? session.settings : undefined
-  const roleInStore = role === undefined || currentUser(s).role === role
-  // Also after "Reset demo data", which puts back the demo's own role and settings.
-  const settingsInStore = settings === undefined || s.settings === settings
 
   useEffect(() => {
-    if (role && !roleInStore) dispatch(actAs(role))
-  }, [role, roleInStore])
-  useEffect(() => {
-    if (settings && !settingsInStore) dispatch(loadSettings(settings))
-  }, [settings, settingsInStore])
+    if (!uid || !role || !services) return
+    let stop: (() => void) | undefined
+    let cancelled = false
+    void Promise.all([import('../store/cloud'), import('firebase/firestore')]).then(([{ startCloud }, store]) => {
+      if (cancelled) return
+      const cloud = startCloud({ db: services.db, uid, role })
+      stop = () => cloud.stop()
+      // Local emulators only: lets a developer cut this tab's Firestore connection to try offline saving.
+      if (firebaseSettings?.useEmulators) {
+        Object.assign(window, {
+          iccNetwork: { off: () => store.disableNetwork(services.db), on: () => store.enableNetwork(services.db) },
+        })
+      }
+    })
+    return () => {
+      cancelled = true
+      stop?.()
+    }
+  }, [uid, role, services])
 
   switch (session.status) {
     case 'demo':
       return children
     case 'ready':
-      return roleInStore ? children : <LoadingScreen />
+      return sync.ready ? children : <LoadingScreen />
     case 'loading':
       return <LoadingScreen />
     case 'signedOut':

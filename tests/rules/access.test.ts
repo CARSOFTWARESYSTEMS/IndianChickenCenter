@@ -100,6 +100,21 @@ describe('what each role can see (D-17)', () => {
     // Invites are the owner's business.
     await assertFails(as(env, 'manager').firestore().collection('invites').get())
   })
+
+  it('R-16 owner and manager read every trip\'s events, purchases and totals in one query each; drivers cannot', async () => {
+    for (const who of ['owner', 'manager'] as const) {
+      const db = as(env, who).firestore()
+      await assertSucceeds(db.collectionGroup('events').where('tripId', '>=', 'trip_2026-11-01').get())
+      await assertSucceeds(db.collectionGroup('purchases').where('tripId', '>=', 'trip_2026-11-01').get())
+      await assertSucceeds(db.collectionGroup('totals').where('tripId', '>=', 'trip_2026-11-01').get())
+    }
+    const driver = as(env, 'driver').firestore()
+    await assertFails(driver.collectionGroup('events').where('tripId', '>=', 'trip_2026-11-01').get())
+    await assertFails(driver.collectionGroup('purchases').get())
+    await assertFails(driver.collectionGroup('totals').get())
+    // Writing through a collection-group path is still the trip rules' business.
+    await assertFails(as(env, 'manager').firestore().doc(`trips/${CLOSED_TRIP}/events/late`).set({ id: 'late' }))
+  })
 })
 
 describe('invites (D-22)', () => {

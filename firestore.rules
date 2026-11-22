@@ -458,6 +458,18 @@ service cloud.firestore {
       }
     }
 
+    // Collection-group reads (P5): owner and manager load the recent window of every trip's events, purchases and
+    // totals with one query each. This grants nothing new: they may already read each trip's documents.
+    match /{path=**}/events/{eventId} {
+      allow list: if can('trip.viewAll');
+    }
+    match /{path=**}/purchases/{eventId} {
+      allow list: if can('purchase.view');
+    }
+    match /{path=**}/totals/{docId} {
+      allow list: if can('profit.view');
+    }
+
     // ------------------------------------------------------------------
     // Customer ledger
     // ------------------------------------------------------------------

@@ -3,7 +3,7 @@
  * Balance = Σ debits − Σ credits over financial entries; snapshots are never summed.
  */
 import type { Actor, Direction, TripStatus } from './common'
-import { isIsoDate, isMonthKey, monthOf, type IsoDate, type MonthKey } from './dates'
+import { firstDayOfMonth, isIsoDate, isMonthKey, monthOf, nextMonth, type IsoDate, type MonthKey } from './dates'
 import { requireCapability, type Capability } from './permissions'
 import { fail, ok, type Result } from './result'
 import { isRoundingPolicy, postAmount, type RoundingPolicyId } from './rounding'
@@ -429,6 +429,16 @@ export function postEntry<E extends LedgerEntry>(
 // Balances, month end, passbook
 // ---------------------------------------------------------------------------
 
+/**
+ * A ledger read from the cloud is not the whole history (Spark read quota, plan v2 §7): it holds every entry dated
+ * on or after `from`, plus each customer's latest month-end snapshot. `from` is never later than the month after
+ * any customer's last closed month, so balances can start from the snapshot. Without a window the book is complete
+ * and balances are a full recompute (D-09).
+ */
+export interface LedgerWindow {
+  from: IsoDate
+}
+
 function sumSigned(entries: readonly LedgerEntry[]): Paise {
   let total = 0
   for (const e of entries) if (isFinancial(e)) total += signedAmount(e)
@@ -475,13 +485,53 @@ export function customerBalance(book: readonly LedgerEntry[], customerId: string
   }
 }
 
+/** The balance to show now: a full recompute, or from the latest snapshot when the book is a window. */
+export function currentBalance(book: readonly LedgerEntry[], customerId: string, window?: LedgerWindow): Paise {
+  return window ? balanceViaSnapshot(book, customerId) : recomputeBalance(book, customerId)
+}
+
+/**
+ * Balance just before `date` (the "previous balance" of a bill or passbook page).
+ * With a window it is the current balance minus everything dated on or after `date`, which is all loaded.
+ */
+export function balanceBefore(
+  book: readonly LedgerEntry[],
+  customerId: string,
+  date: IsoDate,
+  window?: LedgerWindow,
+): Result<Paise> {
+  const own = forCustomer(book, customerId)
+  if (!window) return ok(sumSigned(own.filter((e) => e.date < date)))
+  if (date < window.from) {
+    return fail('outside_window', `Entries before ${window.from} are not loaded on this phone`, { from: window.from })
+  }
+  return ok(balanceViaSnapshot(book, customerId) - sumSigned(own.filter((e) => e.date >= date)))
+}
+
 /** Owner-only month-end close for one customer (C-TXT L69, D-08, D-12). */
 export function closeMonth(
   book: readonly LedgerEntry[],
   input: { customerId: string; month: MonthKey; date: IsoDate; createdBy: string },
   ctx: PostContext,
+  window?: LedgerWindow,
 ): Result<Posted<MonthEndSnapshot>> {
-  const included = forCustomer(book, input.customerId).filter((e) => isFinancial(e) && monthOf(e.date) <= input.month)
+  const own = forCustomer(book, input.customerId)
+  let closingBalance: Paise
+  let entryCount: number
+  const previous = latestSnapshotOf(own.filter((e) => e.type === 'MONTH_END_SNAPSHOT' && e.month < input.month))
+  if (window && previous) {
+    // Window: carry the previous snapshot forward with the months after it, which are all loaded.
+    if (firstDayOfMonth(nextMonth(previous.month)) < window.from) {
+      return fail('outside_window', `Close ${previous.month} first; earlier entries are not loaded`, { from: window.from })
+    }
+    const after = own.filter((e) => isFinancial(e) && monthOf(e.date) > previous.month && monthOf(e.date) <= input.month)
+    closingBalance = previous.closingBalance + sumSigned(after)
+    entryCount = previous.entryCount + after.length
+  } else {
+    const included = own.filter((e) => isFinancial(e) && monthOf(e.date) <= input.month)
+    closingBalance = sumSigned(included)
+    entryCount = included.length
+  }
   const snapshot: MonthEndSnapshot = {
     id: snapshotIdFor(input.customerId, input.month),
     customerId: input.customerId,
@@ -489,8 +539,8 @@ export function closeMonth(
     createdBy: input.createdBy,
     type: 'MONTH_END_SNAPSHOT',
     month: input.month,
-    closingBalance: sumSigned(included),
-    entryCount: included.length,
+    closingBalance,
+    entryCount,
   }
   return postEntry(book, snapshot, ctx)
 }
@@ -506,10 +556,10 @@ export const PASSBOOK_COLUMNS = [
   'Comments',
 ] as const
 
-/** One passbook row, one field per source column. */
+/** One passbook row, one field per source column. BROUGHT_FORWARD opens a passbook that starts at a window. */
 export interface PassbookRow {
   entryId: string
-  type: LedgerEntry['type']
+  type: LedgerEntry['type'] | 'BROUGHT_FORWARD'
   date: IsoDate
   totalItemsGrams?: Grams
   itemRatePaisePerKg?: PaisePerKg
@@ -521,12 +571,22 @@ export interface PassbookRow {
 
 const sortKey = (e: LedgerEntry): string => (e.type === 'MONTH_END_SNAPSHOT' ? `${e.month}-99` : e.date)
 
-export function passbook(book: readonly LedgerEntry[], customerId: string): PassbookRow[] {
-  const own = forCustomer(book, customerId)
-  const byId = new Map(own.map((e) => [e.id, e]))
+export function passbook(book: readonly LedgerEntry[], customerId: string, window?: LedgerWindow): PassbookRow[] {
+  const all = forCustomer(book, customerId)
+  const byId = new Map(all.map((e) => [e.id, e]))
+  const own = window
+    ? all.filter((e) => (e.type === 'MONTH_END_SNAPSHOT' ? firstDayOfMonth(e.month) >= window.from : e.date >= window.from))
+    : all
   const ordered = [...own].sort((a, b) => (sortKey(a) < sortKey(b) ? -1 : sortKey(a) > sortKey(b) ? 1 : 0))
-  let running = 0
-  return ordered.map((e): PassbookRow => {
+  const start = window ? balanceBefore(book, customerId, window.from, window) : ok(0)
+  let running = start.ok ? start.value : 0
+  // Only when there is history before the window (a customer added inside it starts at their opening balance).
+  const earlier = all.some((e) => e.type === 'MONTH_END_SNAPSHOT' && firstDayOfMonth(e.month) < (window?.from ?? ''))
+  const opening: PassbookRow[] =
+    window && (running !== 0 || earlier)
+      ? [{ entryId: `bf_${window.from}`, type: 'BROUGHT_FORWARD', date: window.from, balance: running, comments: 'BroughtForward' }]
+      : []
+  return [...opening, ...ordered.map((e): PassbookRow => {
     const row: PassbookRow = { entryId: e.id, type: e.type, date: e.date, balance: 0, comments: e.comment ?? '' }
     switch (e.type) {
       case 'OPENING_BALANCE':
@@ -564,5 +624,5 @@ export function passbook(book: readonly LedgerEntry[], customerId: string): Pass
     }
     row.balance = running
     return row
-  })
+  })]
 }

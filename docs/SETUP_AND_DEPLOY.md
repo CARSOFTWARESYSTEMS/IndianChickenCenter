@@ -2,7 +2,7 @@
 
 How to connect the app to a Firebase project, add the first owner, and try sign-in on this computer with the Firebase emulators. Without Firebase settings the app runs on demo data only, as in the P3 prototype.
 
-Status (P4): sign-in, roles, the owner's one-time set-up and People are live. Trips, customers and the ledger are still demo data on the device; they move to Firestore in P5. Hosting deploy is P9.
+Status (P5): signed in, everything is saved in Firestore: sign-in, roles, People, the owner's set-up, customers, trips and the ledger. Entries are saved on the phone first and sent when there is internet. Hosting deploy is P9.
 
 ## 1. Create the Firebase project (once)
 
@@ -21,9 +21,9 @@ Status (P4): sign-in, roles, the owner's one-time set-up and People are live. Tr
    **Auth domain.** Google sign-in on iPhones and installed apps only works when the auth domain is the domain the app is served from (plan Part 1, trap 2). With Firebase Hosting that is `your-project.web.app` or your own domain added to Hosting.
 5. **Authentication** → Settings → Authorized domains: keep `localhost` for development, and add your own domain if you use one.
 
-## 2. Deploy the security rules
+## 2. Deploy the security rules and indexes
 
-The rules are in `firestore.rules`; the emulator tests in `tests/rules` check them (`npm run test:rules`).
+The rules are in `firestore.rules` and checked by the emulator tests in `tests/rules` (`npm run test:rules`). The indexes in `firestore.indexes.json` are needed by the app's queries: a driver's trips, and the cross-trip reads of events, purchases and totals. Deploy both together:
 
 ```bash
 npx firebase login
@@ -78,7 +78,8 @@ The emulators run Firebase Auth and Firestore on this computer with a fake Googl
   node scripts/emulator-add-user.mjs owner@example.com owner "Umarabba"
   ```
 
-- Emulator data is wiped when the emulators stop. The Emulator UI is at http://127.0.0.1:4000.
+- Emulator data is kept in `.emulator-data/` (not committed): saved when the emulators stop, loaded when they start. Delete the folder to start empty. After a restart you may need to sign in again. The Emulator UI is at http://127.0.0.1:4000.
+- To see "Saved on phone" and "Syncing", stop the emulators while the app is open, save something, then start them again.
 
 ## 6. Checks
 
@@ -87,14 +88,14 @@ npm test
 ```
 
 ```bash
-npm run test:rules
+npm run test:emulator
 ```
 
 ```bash
 npm run build
 ```
 
-`npm run rules:generate` rewrites the role table and value lists in `firestore.rules` from `src/domain`; test RC-01 fails if someone changes the engine and forgets.
+`npm run test:emulator` runs the rule tests and the offline sync tests (SY-*) in the Firestore emulator; `npm run test:rules` runs the rule tests only. `npm run rules:generate` rewrites the role table and value lists in `firestore.rules` from `src/domain`; test RC-01 fails if someone changes the engine and forgets.
 
 ## 7. Deploy the app (P9)
 
