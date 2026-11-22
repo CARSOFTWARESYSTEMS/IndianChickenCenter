@@ -18,17 +18,17 @@ export function PageHeader({
   return (
     <header className="pt-3 pb-2 md:pt-8">
       {back && (
-        <Link to={back.to} className="-ml-2 inline-flex min-h-11 items-center gap-0.5 px-1 text-body text-accent">
+        <Link to={back.to} className="-ml-2 inline-flex min-h-11 items-center gap-0.5 px-1 text-body text-accent print:hidden">
           <Icon name="chevronLeft" size={22} />
           {back.label}
         </Link>
       )}
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-large font-bold tracking-tight">{title}</h1>
+          <h1 className="text-large font-bold tracking-tight break-words">{title}</h1>
           {subtitle && <p className="mt-0.5 text-sub text-ink-2">{subtitle}</p>}
         </div>
-        {action}
+        {action && <div className="shrink-0 print:hidden">{action}</div>}
       </div>
     </header>
   )
@@ -38,11 +38,26 @@ export function Card({ children, className = '' }: { children: ReactNode; classN
   return <div className={`rounded-2xl bg-card p-4 ${className}`}>{children}</div>
 }
 
-/** iOS-style inset grouped list with an optional header and footer. */
-export function Section({ header, footer, children }: { header?: ReactNode; footer?: ReactNode; children: ReactNode }) {
+/** iOS-style inset grouped list with an optional header (and header action) and footer. */
+export function Section({
+  header,
+  action,
+  footer,
+  children,
+}: {
+  header?: ReactNode
+  action?: ReactNode
+  footer?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section className="mt-6">
-      {header && <h2 className="px-4 pb-1.5 text-caption font-medium uppercase tracking-wide text-ink-2">{header}</h2>}
+      {(header || action) && (
+        <div className="flex min-h-9 items-end justify-between gap-3 px-4 pb-1.5">
+          {header && <h2 className="text-caption font-medium uppercase tracking-wide text-ink-2">{header}</h2>}
+          {action && <div className="-mb-1 print:hidden">{action}</div>}
+        </div>
+      )}
       <div className="divide-y divide-line overflow-hidden rounded-xl bg-card">{children}</div>
       {footer && <p className="px-4 pt-1.5 text-caption text-ink-2">{footer}</p>}
     </section>
@@ -55,9 +70,12 @@ interface RowProps {
   value?: ReactNode
   icon?: IconName
   to?: string
+  onClick?: () => void
+  /** Shown struck through and muted (a reversed entry). */
+  struck?: boolean
 }
 
-export function Row({ title, subtitle, value, icon, to }: RowProps) {
+export function Row({ title, subtitle, value, icon, to, onClick, struck = false }: RowProps) {
   const body = (
     <>
       {icon && (
@@ -65,22 +83,30 @@ export function Row({ title, subtitle, value, icon, to }: RowProps) {
           <Icon name={icon} size={20} />
         </span>
       )}
-      <span className="min-w-0 flex-1">
+      <span className={`min-w-0 flex-1 text-left ${struck ? 'text-ink-2 line-through' : ''}`}>
         <span className="block truncate text-body">{title}</span>
         {subtitle && <span className="block truncate text-sub text-ink-2">{subtitle}</span>}
       </span>
-      {value !== undefined && <span className="shrink-0 text-body text-ink-2">{value}</span>}
-      {to && <Icon name="chevronRight" size={18} className="shrink-0 text-ink-2" />}
+      {value !== undefined && <span className={`num shrink-0 text-right text-body ${struck ? 'text-ink-2 line-through' : ''}`}>{value}</span>}
+      {(to || onClick) && <Icon name="chevronRight" size={18} className="shrink-0 text-ink-2 print:hidden" />}
     </>
   )
-  const cls = 'flex min-h-11 items-center gap-3 px-4 py-2.5'
-  return to ? (
-    <Link to={to} className={`${cls} active:bg-fill`}>
-      {body}
-    </Link>
-  ) : (
-    <div className={cls}>{body}</div>
-  )
+  const cls = 'flex min-h-11 w-full items-center gap-3 px-4 py-2.5'
+  if (to) {
+    return (
+      <Link to={to} className={`${cls} active:bg-fill`}>
+        {body}
+      </Link>
+    )
+  }
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={`${cls} active:bg-fill`}>
+        {body}
+      </button>
+    )
+  }
+  return <div className={cls}>{body}</div>
 }
 
 export type Tone = 'neutral' | 'received' | 'due' | 'danger' | 'muted' | 'accent'
@@ -110,6 +136,11 @@ export function Amount({
   return <span className={`num ${TONE_TEXT[tone]} ${sizes[size]} ${className}`}>{formatRupees(paise)}</span>
 }
 
+/** Tone for a customer balance: owes = due (orange), in credit = received (green). */
+export function balanceTone(balance: Paise): Tone {
+  return balance > 0 ? 'due' : balance < 0 ? 'received' : 'muted'
+}
+
 const PILL: Record<Tone, string> = {
   neutral: 'bg-fill text-ink-2',
   muted: 'bg-fill text-ink-2',
@@ -121,18 +152,18 @@ const PILL: Record<Tone, string> = {
 
 export function Pill({ tone = 'neutral', icon, children }: { tone?: Tone; icon?: IconName; children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-caption font-medium ${PILL[tone]}`}>
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-caption font-medium whitespace-nowrap ${PILL[tone]}`}>
       {icon && <Icon name={icon} size={14} />}
       {children}
     </span>
   )
 }
 
-export function StatTile({ label, children }: { label: ReactNode; children: ReactNode }) {
+export function StatTile({ label, children, tone = 'neutral' }: { label: ReactNode; children: ReactNode; tone?: Tone }) {
   return (
     <div className="rounded-xl bg-card p-3">
       <div className="text-caption text-ink-2">{label}</div>
-      <div className="num mt-0.5 text-title font-semibold">{children}</div>
+      <div className={`num mt-0.5 text-title font-semibold ${TONE_TEXT[tone]}`}>{children}</div>
     </div>
   )
 }

@@ -27,5 +27,22 @@ npm run dev
   - light and dark modes, English and Kannada
   - an installable app that opens offline
   - More → Design system shows every component
-- **`npm run dev`:** runs the app. More → Engine check shows the source examples run through the money engine.
-- **Next:** the P3 clickable prototype on demo data, for the owner to try (Gate B).
+- **P3 clickable prototype:** built. Every flow works on demo data kept on the device, marked "Demo data" on screen.
+- **Next:** Gate B with the owner, then P4 (sign-in and Firestore rules).
+
+## Trying the prototype (Gate B)
+
+Run `npm run dev` and open it on a phone, or use the Browser pane. Settings come prefilled: rate ₹140/kg and diesel ₹91/L.
+
+1. **Check his own numbers.**
+   - Customers → Customer1 shows his October ledger: ₹10,625 → ₹18,701 → ₹36,778 → paid ₹26,000 → **₹10,778**, then the month-end balance.
+   - Trip → Recent trips → 02-11-2026 shows the source trip: **₹67,800** profit with both options.
+2. **Start a trip.** Today → Start trip: choose a vehicle, keep Ramesh as driver, enter litres.
+3. **Load.** Add loading, for example 1,000 kg at ₹120.
+4. **Sell.** Record sale: pick a customer, enter the kg (the rate is the trip rate), and optionally the amount paid now with Cash, UPI or Bank.
+5. **Expenses.** Add labour per person (Driver, Labour 1–5 with names) or as one total, plus food and other costs.
+6. **Finish.** Sell what is left at the shop, or record wastage, then Close trip. Both profit options appear; any difference between them is shown.
+7. **Payment and bill.** On a customer, tap Payment, then Bill. Choose a period and English or ಕನ್ನಡ, then send on WhatsApp (add the customer's mobile number first) or Print.
+8. **Month end.** Ledger → Close (last month).
+9. **Roles.** More → Acting as → Driver. The driver sees only his trips, sells at the trip rate, and sees no purchase rates or profit.
+10. **Start again.** More → Reset demo data.

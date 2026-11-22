@@ -36,6 +36,23 @@ export function todayInKolkata(now: Date = new Date()): IsoDate {
   return `${parts.year}-${parts.month}-${parts.day}`
 }
 
+/** "2026-01" → "2025-12". */
+export function previousMonth(month: MonthKey): MonthKey {
+  const year = Number(month.slice(0, 4))
+  const m = Number(month.slice(5, 7))
+  return m === 1 ? `${year - 1}-12` : `${year}-${String(m - 1).padStart(2, '0')}`
+}
+
+export function firstDayOfMonth(month: MonthKey): IsoDate {
+  return `${month}-01`
+}
+
+/** "2028-02" → "2028-02-29". */
+export function lastDayOfMonth(month: MonthKey): IsoDate {
+  const days = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()
+  return `${month}-${String(days).padStart(2, '0')}`
+}
+
 /** "2026-10-05" → "05-10-2026" (bill and passbook display). */
 export function formatIndianDate(date: IsoDate): string {
   const [y, m, d] = date.split('-')

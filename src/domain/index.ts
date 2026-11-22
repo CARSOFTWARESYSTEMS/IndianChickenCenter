@@ -1,6 +1,7 @@
 export * from './bill'
 export * from './billLabels'
 export * from './common'
+export * from './customer'
 export * from './dates'
 export * from './format'
 export * from './ledger'

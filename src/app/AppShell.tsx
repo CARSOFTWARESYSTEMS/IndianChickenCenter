@@ -4,7 +4,8 @@
  */
 import { NavLink, Outlet } from 'react-router'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import { DEFAULT_SETTINGS } from '../domain'
+import { DemoBadge } from '../pages/more'
+import { useAppState } from '../store/store'
 import type { Labels } from '../i18n/labels'
 import { Button } from '../ui/Button'
 import { Icon, type IconName } from '../ui/Icon'
@@ -22,7 +23,7 @@ const TABS: readonly { to: string; key: keyof Labels['tabs']; icon: IconName; en
 function TabBar() {
   const t = useT()
   return (
-    <nav aria-label="Sections" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bar backdrop-blur-xl md:hidden">
+    <nav aria-label="Sections" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bar backdrop-blur-xl md:hidden print:hidden">
       <ul className="mx-auto flex max-w-lg">
         {TABS.map((tab) => (
           <li key={tab.to} className="flex-1">
@@ -48,11 +49,15 @@ function TabBar() {
 
 function Sidebar({ online }: { online: boolean }) {
   const t = useT()
+  const { settings } = useAppState()
   return (
-    <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-card px-3 py-5 md:flex lg:w-72">
+    <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-card px-3 py-5 md:flex lg:w-72 print:hidden">
       <div className="px-3 pb-5">
-        <p className="text-body font-semibold">{DEFAULT_SETTINGS.businessName}</p>
-        <p className="text-sub text-ink-2">{DEFAULT_SETTINGS.shopLocation.label}</p>
+        <p className="text-body font-semibold">{settings.businessName}</p>
+        <p className="text-sub text-ink-2">{settings.shopLocation.label}</p>
+        <div className="mt-2">
+          <DemoBadge />
+        </div>
       </div>
       <nav aria-label="Sections">
         <ul className="space-y-1">
@@ -154,6 +159,9 @@ export function AppShell() {
       <div className="min-w-0 flex-1">
         {!online && <OfflineBanner />}
         <main className="mx-auto w-full max-w-3xl px-4 pb-[calc(96px+env(safe-area-inset-bottom))] md:px-6 md:pb-12 lg:px-8">
+          <div className="flex justify-end pt-2 md:hidden print:hidden">
+            <DemoBadge />
+          </div>
           <Outlet />
         </main>
       </div>

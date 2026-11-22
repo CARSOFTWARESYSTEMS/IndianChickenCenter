@@ -84,6 +84,81 @@ export function Segmented<T extends string>({
   )
 }
 
+/** Single-choice chips for short lists (vehicles, drivers, categories, labour slots). */
+export function Chips<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T | undefined
+  options: readonly { value: T; label: string; disabled?: boolean }[]
+  onChange: (value: T) => void
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-2">
+      {options.map((o) => {
+        const active = o.value === value
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={o.disabled}
+            onClick={() => onChange(o.value)}
+            className={`num min-h-10 rounded-full px-3.5 text-sub font-medium transition-colors disabled:opacity-35 ${
+              active ? 'bg-accent text-on-accent' : 'bg-card text-ink ring-1 ring-line'
+            }`}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** iOS-style on/off switch with its label. */
+export function Switch({
+  label,
+  checked,
+  onChange,
+  disabled = false,
+}: {
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+}) {
+  const id = useId()
+  return (
+    <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2">
+      <span id={id} className="text-body">
+        {label}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-labelledby={id}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative h-[31px] w-[51px] shrink-0 rounded-full transition-colors disabled:opacity-40 ${
+          checked ? 'bg-received' : 'bg-fill'
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 left-0.5 size-[27px] rounded-full bg-white shadow transition-transform ${
+            checked ? 'translate-x-5' : ''
+          }`}
+        />
+      </button>
+    </div>
+  )
+}
+
 export type SyncState = 'local' | 'syncing' | 'cloud' | 'attention'
 
 /** Every money entry shows where it is saved (plan principle 5). */

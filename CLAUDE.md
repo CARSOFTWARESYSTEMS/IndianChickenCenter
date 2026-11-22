@@ -34,7 +34,11 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - `src/i18n/labels.ts` — every screen label, English + Kannada; the type makes a missing Kannada key a build error.
   Read labels with `useT()`; never hard-code screen text.
 - `src/app/` — shell (bottom tabs < 768 px, sidebar ≥ 768 px), preferences (language, theme), install + update prompts, shortcuts.
-- `src/pages/` — the five sections, More sub-pages, the design gallery (More → Design system) and the engine check page.
+- `src/store/` — app state and commands. `state.ts` (types + demo seed built through the engine), `commands.ts`
+  (every change goes through engine functions; screens call `dispatch(command)`), `selectors.ts` (read views),
+  `store.ts` (demo store saved in localStorage; P5 replaces it with Firestore behind the same commands).
+- `src/pages/` — today, trips (+ tripSheets), customers, bill, ledger, more (profile, settings, help), design gallery, engine check.
+  Sheets are rendered only while open, so each opening gets fresh ids (plan §5).
 - PWA: vite-plugin-pwa (`registerType: 'prompt'`), icons generated from `public/icon.svg` by `npx pwa-assets-generator`.
 
 ## Commands
@@ -45,7 +49,9 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 ## Status
 P2 money engine built: 49 F-* + 17 ENG-* + 10 G-* tests pass. Gate A answered on 22 Nov 2026 except U-10 and U-12;
 the follow-up questions are in docs/REQUIREMENTS_TRACEABILITY.md.
-P1 shell + design system built (branch p1-shell): five sections, light/dark, English/Kannada, PWA with offline shell,
-install guide. Screens show structure and empty states; Save buttons stay disabled until P3.
+P1 shell + design system built (branch p1-shell). P3 clickable prototype built (branch p3-prototype): every Gate B flow
+works on demo data (start trip, loading, orders, sale with paid now, expenses, shop sale, wastage, close and both profits,
+payments, reversals, Kannada/English bill to WhatsApp or print, month-end close, business profile, role switch).
+Tests: 49 F-* + 17 ENG-* + 10 G-* + 4 customer/date + 5 store (ST-*) = 85.
 Run: `npm run dev` ("vite" in .claude/launch.json); production check: `npm run build` then "preview-build".
-Next: P3 clickable prototype on an in-memory demo store, then Gate B with the owner.
+Next: Gate B with the owner (README "Trying the prototype"), then P4 auth + Firestore rules.
