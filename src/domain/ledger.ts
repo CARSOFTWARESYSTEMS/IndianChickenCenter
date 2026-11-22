@@ -299,7 +299,8 @@ export interface PostContext extends Actor {
   tripInfo?: (tripId: string) => TripAccess | undefined
 }
 
-const CAPABILITY_FOR: Record<LedgerEntry['type'], Capability> = {
+/** Capability each ledger entry needs. Firestore rules copy this table (src/data/rulesConstants.ts). */
+export const LEDGER_ENTRY_CAPABILITY: Record<LedgerEntry['type'], Capability> = {
   OPENING_BALANCE: 'customer.manage',
   SALE: 'sale.record',
   PAYMENT: 'payment.record',
@@ -370,7 +371,7 @@ export function postEntry<E extends LedgerEntry>(
   }
 
   if (entry.createdBy !== ctx.actorId) return fail('actor_mismatch', 'Entries must be created by the signed-in user')
-  const allowed = requireCapability(ctx, CAPABILITY_FOR[entry.type])
+  const allowed = requireCapability(ctx, LEDGER_ENTRY_CAPABILITY[entry.type])
   if (!allowed.ok) return allowed
   const shape = validateShape(entry)
   if (!shape.ok) return shape

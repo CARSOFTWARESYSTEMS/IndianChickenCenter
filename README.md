@@ -7,16 +7,29 @@ Trip, ledger and billing app for a chicken distribution business in Ujire / Belt
 - `docs/IndianChickenCenter.txt` — the customer's requirement (source of truth, never edited)
 - `docs/Indian_Chicken_Center_Plan.md` — the app plan (Part 2 wins over Part 1)
 - `docs/FINANCIAL_CALCULATIONS.md` — the money rules as built, and where they differ from the plan
+- `docs/SETUP_AND_DEPLOY.md` — connecting Firebase, adding the first owner, trying sign-in with the emulators
 - `src/domain/` — the money engine (pure TypeScript) and its tests
+- `firestore.rules` — the same money and role rules on the server, tested in `tests/rules`
 
 ## Commands
 
 ```bash
 npm install
+```
+
+```bash
 npm test
-npm run typecheck
+```
+
+```bash
+npm run test:rules
+```
+
+```bash
 npm run dev
 ```
+
+`npm run test:rules` starts the Firestore emulator, so it needs Java 21 or newer.
 
 ## Status
 
@@ -28,7 +41,12 @@ npm run dev
   - an installable app that opens offline
   - More → Design system shows every component
 - **P3 clickable prototype:** built. Every flow works on demo data kept on the device, marked "Demo data" on screen.
-- **Next:** Gate B with the owner, then P4 (sign-in and Firestore rules).
+- **P4 sign-in and security rules:** built.
+  - Google sign-in. Only people with a user record can open the app. The owner adds managers and drivers by email under More → People.
+  - On the owner's first sign-in, a short set-up asks for business details, bill rounding and bill language.
+  - Firestore rules repeat the money engine on the server: posted entries are never edited, every amount is re-checked in whole paise, and each role can do only its own part. A driver cannot read purchase rates or profit.
+  - Without Firebase settings the app stays in demo mode, as before. See `docs/SETUP_AND_DEPLOY.md`.
+- **Next:** Gate B with the owner, then P5 (trips, customers and the ledger saved in Firestore).
 
 ## Trying the prototype (Gate B)
 

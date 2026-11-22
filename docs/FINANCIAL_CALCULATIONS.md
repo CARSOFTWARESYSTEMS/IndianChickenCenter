@@ -1,6 +1,6 @@
 # Financial calculations — as built (P2)
 
-The money engine is plain TypeScript in `src/domain`, with no React or Firebase. It reproduces every example in `IndianChickenCenter.txt`: 67,800 profit both ways and a ledger balance of 10,778 when paise are dropped. All 49 financial tests from the plan pass, plus 17 engine tests (ENG-*) and 10 tests for the owner's Gate A answers (G-*).
+The money engine is plain TypeScript in `src/domain`, with no React or Firebase. It reproduces every example in `IndianChickenCenter.txt`: 67,800 profit both ways and a ledger balance of 10,778 when paise are dropped. All 49 financial tests from the plan pass, plus 18 engine tests (ENG-*) and 10 tests for the owner's Gate A answers (G-*).
 
 Status: built and tested, **not yet approved**. Section 3 lists where the engine differs from the plan. Review it at Gate B. The owner's answers are recorded in `REQUIREMENTS_TRACEABILITY.md`.
 
@@ -50,6 +50,21 @@ User input is parsed from text (`parseKg`, `parseRupees`, …), never through fl
 | 6 | Silent | Fuel, purchases and orders keep exact paise; only customer SALE lines follow U-01 | They are not bill lines |
 | 7 | Silent | Entries cannot be dated before the customer's opening balance | Keeps the passbook in date order |
 | 8 | Silent | Displayed Option 1 parts round to the nearest paisa (halves away from zero); profit itself is exact | Parts can differ from the profit by at most 1 paisa when shown |
+| 9 | Silent | A trip-rate change (DEFAULT_RATE) cannot be reversed; a new rate replaces it (ENG-18, D-25) | The stored trip holds the current rate, which the rules check drivers' sales against |
+| 10 | D-06: auto-IDs | A stored trip's id is `trip_<date>_<vehicle>` | Makes "one trip per vehicle per day" (U-06) enforceable by the rules |
+
+## 3a. The same rules on the server (P4)
+
+`firestore.rules` repeats these checks for every document saved, in integer units, without trusting the phone:
+
+- **Sales and shop sales:** `exactMilliPaise = grams × rate`, and the posted amount matches the entry's rounding policy. The check uses only multiplication and comparison (for half-up to the rupee: `amount × 1000 ≤ exact + 50,000 < amount × 1000 + 1,00,000`), so there is no integer-division question.
+- **Fuel, loading, orders:** exact paise, half up. Fuel by pump amount re-derives the litres the same way the engine does.
+- **Corrections:** a reversal mirrors its original's amount in the other direction, once (`rev_<id>`), and never on a closed trip. An adjustment needs the owner and a reason.
+- **Month end:** an entry dated in a month already closed for that customer is refused. The snapshot and the customer's "closed through" month are saved together.
+- **Who:** the role table is generated from `permissions.ts`. A driver writes only on their own open trip, sells at the trip's current rate, and cannot read purchase rates or money totals.
+- **Limits:** up to 100 tonnes, ₹1,00,000 per kg or litre, ₹10 crore per entry. These keep every product below 2^53, so the app reads back exactly what was checked.
+
+Rules cannot add up documents, so stock, balances and the labour-style check (D-20) stay in the app (KNOWN_LIMITATIONS.md).
 
 ## 4. Open questions found while building
 
@@ -57,7 +72,7 @@ User input is parsed from text (`parseKg`, `parseRupees`, …), never through fl
   - the owner reopens the trip, or
   - a ledger ADJUSTMENT with a reason, although the plan says adjustments are not for typos.
 - **A sale synced after the trip closed.** If another phone saved a sale offline and syncs after close, the sale is rejected (`trip_closed`) and shows "Needs attention". Decide whether the owner re-posts it on a new trip or reopens the closed one.
-- **Hiding profit from staff (U-07).** If staff must not see profit, purchase rates must move out of `tripEvents` before P4. Security rules cannot hide single fields.
+- **Hiding profit from staff (U-07).** Done in P4: purchase rates and money totals have their own documents that drivers cannot read. Whether the manager may see them is still open question 3 in REQUIREMENTS_TRACEABILITY.md.
 
 ## 5. Test map
 
@@ -69,8 +84,11 @@ User input is parsed from text (`parseKg`, `parseRupees`, …), never through fl
 | `__tests__/profit.test.ts` | F-PRF-01–06 |
 | `__tests__/ledger.test.ts` | F-LED-01–12 |
 | `__tests__/bill-format.test.ts` | F-BILL-01–02, F-FMT-01 |
-| `__tests__/engine-extras.test.ts` | ENG-01–17 (input parsing, U-01 gate, fixed ids, closed month and trip, S-* rule mirrors) |
+| `__tests__/engine-extras.test.ts` | ENG-01–18 (input parsing, U-01 gate, fixed ids, closed month and trip, S-* rule mirrors, rate change not reversible) |
 | `__tests__/gate-a-decisions.test.ts` | G-01–09 and G-04b (rounding, payment methods, vehicles, trip rate, shop sale, labour, roles, Kannada bill, settings) |
+| `src/data/__tests__/docs.test.ts` | DOC-01–07: how records are stored (loading split, rate change, trip id, close totals, month-end closure, invites) |
+| `src/data/__tests__/rules-constants.test.ts` | RC-01–02: the role table and value lists in `firestore.rules` match the engine |
+| `tests/rules/*.test.ts` (emulator, `npm run test:rules`) | S-01–S-10 from the plan, R-01–R-15 (drivers, visibility, invites, settings, customers, vehicles, trips, loading, rates, month end, opening balance, fuel, shop sales, orders) |
 
 Expected values are literal numbers checked by hand, never computed by the engine. To confirm the tests can fail, the engine was broken on purpose and then restored:
 - truncating paise was swapped for rounding: 19 tests failed

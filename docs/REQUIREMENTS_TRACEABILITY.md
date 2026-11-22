@@ -37,6 +37,11 @@ The full 36-row traceability matrix stays in `Indian_Chicken_Center_Plan.md` (Pa
 | D-19 | A shop sale uses the same rounding as customer sales and has no customer ledger | Paid at the shop on the spot |
 | D-20 | A trip uses either per-person labour lines or one labour total, never both | Prevents counting labour twice |
 | D-21 | Only owner or manager record loading (kg × purchase rate) | Keeps purchase rates away from drivers |
+| D-22 | People join by invite: the owner enters a Google email and a role (Manager or Driver) under More → People. The user record is made when that account first signs in. | The plan had user records made only in the Firebase console, which the owner cannot easily do. The rules still stop anyone choosing their own role. |
+| D-23 | A second owner can be added only in the Firebase console | Owner access covers everything, so it should never be one tap away |
+| D-24 | An opening balance is entered only when the customer is added | Rules cannot see a customer's other entries; saving both together keeps the opening balance first |
+| D-25 | A trip-rate change is never reversed; the owner or manager sets the rate again | The trip keeps its current rate, and the rules check drivers' sales against it (ENG-18) |
+| D-26 | Month-end closes go in order for each customer | The rules then need only one "closed through" month per customer |
 
 ### Role split (D-17)
 

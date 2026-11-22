@@ -38,6 +38,7 @@ import {
   type PaisePerLitre,
   type PaymentMethod,
   type PostContext,
+  type Role,
   type Result,
   type SaleCommand,
   type ShopSaleCommand,
@@ -70,6 +71,15 @@ const done = <T>(state: AppState, value: T): Result<Next<T>> => ok({ state, valu
 
 export function setActor(userId: string) {
   return (s: AppState): Result<Next<void>> => done({ ...s, actorId: userId }, undefined)
+}
+
+/** Signed in (P4): the demo data is used as the demo person with the signed-in role. */
+export function actAs(role: Role) {
+  return (s: AppState): Result<Next<void>> => {
+    const user = s.users.find((u) => u.role === role)
+    if (!user) return fail('not_permitted', `No demo user with the ${role} role`)
+    return user.id === s.actorId ? done(s, undefined) : done({ ...s, actorId: user.id }, undefined)
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +341,11 @@ export function closeMonthForAll(month: MonthKey, date: IsoDate) {
 // ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
+
+/** Business details as saved in the cloud (owner set-up). Loading them needs no role; saving does. */
+export function loadSettings(settings: BusinessSettings) {
+  return (s: AppState): Result<Next<void>> => done({ ...s, settings }, undefined)
+}
 
 export function saveSettings(settings: BusinessSettings) {
   return (s: AppState): Result<Next<void>> => {

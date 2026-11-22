@@ -157,7 +157,8 @@ export type TripEvent =
   | ShopSaleEvent
   | TripReversalEvent
 
-const EVENT_CAPABILITY: Record<TripEvent['type'], Capability> = {
+/** Capability each trip event needs. Firestore rules copy this table (src/data/rulesConstants.ts). */
+export const TRIP_EVENT_CAPABILITY: Record<TripEvent['type'], Capability> = {
   FUEL: 'trip.record',
   LOADING: 'purchase.record',
   ORDER: 'trip.record',
@@ -380,6 +381,7 @@ export function makeTripReversal(
   input: { date: IsoDate; createdBy: string; reason?: string },
 ): Result<TripReversalEvent> {
   if (original.type === 'REVERSAL') return fail('cannot_reverse', 'A reversal cannot itself be reversed')
+  if (original.type === 'DEFAULT_RATE') return fail('cannot_reverse', 'Set a new trip rate instead of reversing a rate change')
   const event: TripReversalEvent = {
     id: reversalIdFor(original.id),
     tripId: original.tripId,
@@ -481,7 +483,7 @@ export function postTripEvent(
   if (event.tripId !== trip.id) return fail('trip_not_found', 'Event belongs to a different trip')
   if (trip.status === 'CLOSED') return fail('trip_closed', 'This trip is closed; its records are read-only')
   if (event.createdBy !== ctx.actorId) return fail('actor_mismatch', 'Events must be created by the signed-in user')
-  const allowed = requireCapability(ctx, EVENT_CAPABILITY[event.type])
+  const allowed = requireCapability(ctx, TRIP_EVENT_CAPABILITY[event.type])
   if (!allowed.ok) return allowed
   const assigned = checkDriverAssignment(trip, ctx)
   if (!assigned.ok) return assigned
@@ -492,6 +494,8 @@ export function postTripEvent(
     const original = events.find((e) => e.id === event.reversesId && e.tripId === trip.id)
     if (!original) return fail('reversal_target_missing', 'The event to reverse was not found')
     if (original.type === 'REVERSAL') return fail('cannot_reverse', 'A reversal cannot itself be reversed')
+    // The trip document holds the current rate for the security rules, so a rate change is replaced, never reversed.
+    if (original.type === 'DEFAULT_RATE') return fail('cannot_reverse', 'Set a new trip rate instead of reversing a rate change')
   }
   if (event.type === 'EXPENSE' && event.category === 'LABOUR') {
     const labour = activeEvents(events, trip.id).filter(

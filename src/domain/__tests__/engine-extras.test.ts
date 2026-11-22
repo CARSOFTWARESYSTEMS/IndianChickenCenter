@@ -10,6 +10,7 @@ import {
   formatLitres,
   kg,
   makeAdjustment,
+  makeDefaultRate,
   makeFuelByAmount,
   makeOpeningBalance,
   makeReversal,
@@ -210,5 +211,14 @@ describe('Engine extras', () => {
     const early = must(makeSale({ id: 'early', customerId: LEDGER_CUSTOMER, date: '2026-09-30', createdBy: OWNER, grams: kg('1'), ratePaisePerKg: ratePerKg('130'), policy: 'TRUNCATE_RUPEE' }))
     const entries: LedgerEntry[] = l.entries
     expect(errorCode(postEntry(entries, early, owner))).toBe('invalid_input')
+  })
+
+  it('ENG-18 a trip rate change is replaced by a new rate, never reversed (the stored trip holds the current rate)', () => {
+    const t = new TripBuilder()
+    const rate = t.add(makeDefaultRate({ id: 'rate-1', tripId: t.trip.id, date: TRIP_DATE, createdBy: OWNER, ratePaisePerKg: ratePerKg('145') }))
+    expect(errorCode(makeTripReversal(rate, { date: TRIP_DATE, createdBy: OWNER }))).toBe('cannot_reverse')
+    const forged = { id: 'rev_rate-1', tripId: t.trip.id, date: TRIP_DATE, createdBy: OWNER, type: 'REVERSAL' as const, reversesId: 'rate-1' }
+    expect(errorCode(postTripEvent(t.trip, t.events, forged, owner))).toBe('cannot_reverse')
+    expect(t.summary().defaultSaleRatePaisePerKg).toBe(14_500)
   })
 })

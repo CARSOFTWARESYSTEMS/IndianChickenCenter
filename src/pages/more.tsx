@@ -7,8 +7,10 @@ import { useToast } from '../app/toast'
 import { errorText } from '../i18n/labels'
 import { parsePricePerLitre, parseRatePerKg, ROUNDING_POLICIES, type BusinessSettings, type Language, type RoundingPolicyId } from '../domain'
 import { saveSettings, setActor } from '../store/commands'
+import { settingsWrites } from '../data/docs'
+import { useSession } from '../firebase/session'
 import { allowed, currentUser } from '../store/selectors'
-import { dispatch, resetDemo, useAppState } from '../store/store'
+import { dispatch, getState, resetDemo, useAppState } from '../store/store'
 import { StickyAction } from '../ui/StickyAction'
 import { Button } from '../ui/Button'
 import { Chips, Field, Segmented, Switch } from '../ui/controls'
@@ -30,18 +32,38 @@ export function MorePage() {
   const t = useT()
   const s = useAppState()
   const toast = useToast()
+  const { session, signOut } = useSession()
+  const signedIn = session.status === 'ready' ? session : undefined
   return (
     <>
       <PageHeader title={t.tabs.more} />
+      {signedIn && (
+        <Section header={t.auth.account} footer={t.auth.cloudNote}>
+          <Row
+            title={signedIn.user.name}
+            subtitle={signedIn.account.email}
+            value={<Pill tone="accent">{t.roles[signedIn.user.role]}</Pill>}
+          />
+          <div className="p-3">
+            <Button block variant="secondary" onClick={() => void signOut()}>
+              {t.auth.signOut}
+            </Button>
+          </div>
+        </Section>
+      )}
       <Section header={<span className="inline-flex items-center gap-2">{t.demo.badge}</span>} footer={t.demo.note}>
         <div className="space-y-3 p-3">
-          <p className="px-1 text-sub text-ink-2">{t.demo.actingAs}</p>
-          <Chips
-            label={t.demo.actingAs}
-            value={s.actorId}
-            onChange={(id) => dispatch(setActor(id))}
-            options={s.users.map((u) => ({ value: u.id, label: `${t.roles[u.role]} · ${u.name}` }))}
-          />
+          {!signedIn && (
+            <>
+              <p className="px-1 text-sub text-ink-2">{t.demo.actingAs}</p>
+              <Chips
+                label={t.demo.actingAs}
+                value={s.actorId}
+                onChange={(id) => dispatch(setActor(id))}
+                options={s.users.map((u) => ({ value: u.id, label: `${t.roles[u.role]} · ${u.name}` }))}
+              />
+            </>
+          )}
           <Button
             block
             variant="destructive"
@@ -62,6 +84,7 @@ export function MorePage() {
       <Section>
         <Row icon="reports" title={t.more.reports} to="/more/reports" />
         <Row icon="backup" title={t.more.backup} to="/more/backup" />
+        {signedIn?.user.role === 'owner' && <Row icon="customers" title={t.more.people} to="/more/people" />}
         <Row icon="store" title={t.more.profile} to="/more/profile" />
         <Row icon="settings" title={t.more.settings} to="/more/settings" />
         <Row icon="help" title={t.more.help} to="/more/help" />
@@ -79,6 +102,7 @@ export function BusinessProfilePage() {
   const t = useT()
   const s = useAppState()
   const toast = useToast()
+  const { session, write } = useSession()
   const mayEdit = allowed(s, 'settings.edit')
   const [draft, setDraft] = useState<BusinessSettings>(s.settings)
   const [phones, setPhones] = useState(s.settings.contact.phones.join(', '))
@@ -110,7 +134,15 @@ export function BusinessProfilePage() {
     const r = dispatch(saveSettings(next))
     if (!r.ok) return setError(errorText(t, r.error) + (r.error.code === 'invalid_input' || r.error.code === 'invalid_phone' ? ` (${r.error.message})` : ''))
     setError(undefined)
-    toast(t.profile.saved)
+    if (session.status !== 'ready') {
+      toast(t.profile.saved)
+      return
+    }
+    // Signed in: business details live in the cloud (set up at activation); other screens follow from there.
+    write(settingsWrites(getState().settings, session.account.uid)).then(
+      () => toast(t.profile.saved),
+      () => setError(t.people.failed),
+    )
   }
 
   return (

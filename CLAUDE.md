@@ -37,21 +37,39 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - `src/store/` — app state and commands. `state.ts` (types + demo seed built through the engine), `commands.ts`
   (every change goes through engine functions; screens call `dispatch(command)`), `selectors.ts` (read views),
   `store.ts` (demo store saved in localStorage; P5 replaces it with Firestore behind the same commands).
-- `src/pages/` — today, trips (+ tripSheets), customers, bill, ledger, more (profile, settings, help), design gallery, engine check.
+- `src/pages/` — today, trips (+ tripSheets), customers, bill, ledger, more (profile, settings, help), people (owner),
+  auth (sign-in, not on the team, owner set-up), design gallery, engine check.
   Sheets are rendered only while open, so each opening gets fresh ids (plan §5).
+- `src/data/docs.ts` — how engine records are stored in Firestore (paths, document shapes, `DocWrite` batches). Pure TS.
+  Purchase rates live in `trips/{id}/purchases`, money totals in `trips/{id}/totals/close` (drivers cannot read them).
+  `src/data/rulesConstants.ts` generates the role table and value lists in `firestore.rules` from `src/domain`.
+- `src/firebase/` — `config.ts` (env), `client.ts` (lazy-loaded Auth + Firestore with persistentLocalCache, `commitWrites`),
+  `session.tsx` (session states: demo, signedOut, notAuthorised, needsActivation, waitingForOwner, ready).
+  `src/app/AuthGate.tsx` shows the app only when ready (or in demo mode) and maps the signed-in role onto the demo store.
+- `firestore.rules` — server copy of the engine rules (append-only, integer money checks, roles). Tests: `tests/rules/`.
+  No Firebase settings in env → demo mode, exactly as P3. `.env.emulators` → local emulators (open http://127.0.0.1:5174).
 - PWA: vite-plugin-pwa (`registerType: 'prompt'`), icons generated from `public/icon.svg` by `npx pwa-assets-generator`.
 
 ## Commands
-- `npm test` — run all tests once
+- `npm test` — run all unit tests once (no emulator)
+- `npm run test:rules` — security-rule tests in the Firestore emulator (Java 21+; `scripts/firebase.sh` finds it on a Mac)
+- `npm run rules:generate` — rewrite the generated block in `firestore.rules` after changing roles or value lists
 - `npm run typecheck`
-- `npm run dev` — Vite dev server
+- `npm run dev` — Vite dev server, demo mode
+- `npm run emulators` + `npm run dev:emulators -- --port 5174` — sign-in against local Auth/Firestore emulators;
+  `node scripts/emulator-add-user.mjs <email> owner "<name>"` makes an emulator account the owner
+- `npm run deploy:rules -- --project <id>` — deploy rules (needs `npx firebase login`; ask before deploying)
 
 ## Status
-P2 money engine built: 49 F-* + 17 ENG-* + 10 G-* tests pass. Gate A answered on 22 Nov 2026 except U-10 and U-12;
+P2 money engine built: 49 F-* + 18 ENG-* + 10 G-* tests pass. Gate A answered on 22 Nov 2026 except U-10 and U-12;
 the follow-up questions are in docs/REQUIREMENTS_TRACEABILITY.md.
 P1 shell + design system built (branch p1-shell). P3 clickable prototype built (branch p3-prototype): every Gate B flow
 works on demo data (start trip, loading, orders, sale with paid now, expenses, shop sale, wastage, close and both profits,
 payments, reversals, Kannada/English bill to WhatsApp or print, month-end close, business profile, role switch).
 Tests: 49 F-* + 17 ENG-* + 10 G-* + 4 customer/date + 5 store (ST-*) = 85.
 Run: `npm run dev` ("vite" in .claude/launch.json); production check: `npm run build` then "preview-build".
-Next: Gate B with the owner (README "Trying the prototype"), then P4 auth + Firestore rules.
+P4 auth + rules built (branch p4-auth-rules): Google sign-in, users/{uid} roles, invites (More → People, D-22),
+owner set-up wizard, sign-out clears the phone's Firestore cache. Business settings are saved in Firestore; trips,
+customers and the ledger are still demo data until P5. Tests: 49 F-* + 18 ENG-* + 10 G-* + 4 CU/DT + 5 ST-* + 7 DOC-*
++ 2 RC-* = 95 unit tests, plus 27 emulator rule tests (S-01–S-10, R-01–R-15). Setup: docs/SETUP_AND_DEPLOY.md.
+Next: Gate B with the owner (README "Trying the prototype"), then P5 Firestore persistence behind the same commands.

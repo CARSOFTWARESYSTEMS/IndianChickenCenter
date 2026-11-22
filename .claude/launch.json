@@ -12,6 +12,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "preview", "--", "--port", "4173", "--strictPort"],
       "port": 4173
+    },
+    {
+      "name": "emulators",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "emulators"],
+      "port": 4000
+    },
+    {
+      "name": "vite-emulators",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:emulators", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
     }
   ]
 }
