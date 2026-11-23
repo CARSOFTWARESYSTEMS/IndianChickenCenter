@@ -2,7 +2,7 @@
 
 How to connect the app to a Firebase project, add the first owner, and try sign-in on this computer with the Firebase emulators. Without Firebase settings the app runs on demo data only, as in the P3 prototype.
 
-Status (P6): signed in, everything is saved in Firestore: sign-in, roles, People, the owner's set-up, customers, trips, the ledger and issued bills. Entries are saved on the phone first and sent when there is internet; bill numbers need the internet. Hosting deploy is P9.
+Status (P7): signed in, everything is saved in Firestore: sign-in, roles, People, the owner's set-up, customers, trips, the ledger and issued bills. Entries are saved on the phone first and sent when there is internet; bill numbers need the internet. The owner backs up to Google Drive from the app; restoring is done with a tool on a computer. Hosting deploy is P9.
 
 ## 1. Create the Firebase project (once)
 
@@ -20,6 +20,9 @@ Status (P6): signed in, everything is saved in Firestore: sign-in, roles, People
 
    **Auth domain.** Google sign-in on iPhones and installed apps only works when the auth domain is the domain the app is served from (plan Part 1, trap 2). With Firebase Hosting that is `your-project.web.app` or your own domain added to Hosting.
 5. **Authentication** → Settings → Authorized domains: keep `localhost` for development, and add your own domain if you use one.
+6. **For backups to Google Drive (P7)**, in the [Google Cloud console](https://console.cloud.google.com) for the same project:
+   - APIs & Services → Library → **Google Drive API** → Enable.
+   - APIs & Services → OAuth consent screen: app name and support email. The only Drive permission the app asks for is `drive.file` (files the app created), which needs no Google review. While the consent screen is in "Testing", add the owner's Google account as a test user, or publish it.
 
 ## 2. Deploy the security rules and indexes
 
@@ -97,6 +100,43 @@ npm run build
 
 `npm run test:emulator` runs the rule tests and the offline sync tests (SY-*) in the Firestore emulator; `npm run test:rules` runs the rule tests only. `npm run rules:generate` rewrites the role table and value lists in `firestore.rules` from `src/domain`; test RC-01 fails if someone changes the engine and forgets.
 
-## 7. Deploy the app (P9)
+## 7. Backups and restore (P7)
+
+**Backing up (owner, in the app).** More → Backup to Google Drive → **Back up now**. The app reads every record, saves one JSON file to the owner's Drive, reads the copy back and checks it. Only then does it show **Verified** (and mark the file so on Drive). Do this after closing each month. The app cannot back up by itself: a Drive sign-in from a browser lasts about an hour. Each backup reads every record once, so it uses that many of the day's free reads.
+
+- **Save a copy on this device** downloads the same file without Drive.
+- **Check a backup file** re-checks any backup file: checksum, record counts, every customer's balance recomputed from all entries, and every month-end snapshot. **Compare with the cloud** shows which records are missing from the cloud now.
+
+**Restoring (on a computer).** Records are only ever added back, never changed. The app cannot do this itself: the security rules accept records written now, by the person signed in, and a record from a backup is neither (decision D-29). The restore tool uses the project's admin access instead:
+
+```bash
+gcloud auth login
+```
+
+```bash
+npm run restore -- "ICC backup 2026-11-23 0915.json" --project your-project-id
+```
+
+That shows the plan: records already there, records that differ (left as they are), and records missing. Then add the missing ones:
+
+```bash
+npm run restore -- "ICC backup 2026-11-23 0915.json" --project your-project-id --apply
+```
+
+The tool refuses a file that fails its checks. Instead of `gcloud`, an owner access token can be given in `ICC_ACCESS_TOKEN`.
+
+**Practising with the emulators.** With the emulators running and some data in them:
+
+```bash
+npm run emulator:backup -- owner@example.com backup.json
+```
+
+```bash
+npm run restore -- backup.json --emulator --database restore-check --apply
+```
+
+`restore-check` is an empty second database in the emulator, so this is the "dry-run restore into a blank emulator" of test B-04.
+
+## 8. Deploy the app (P9)
 
 Firebase Hosting serves `dist/` with a rewrite to `index.html` (`firebase.json`). The full production checklist (auth domain, smoke test) is part of P9.

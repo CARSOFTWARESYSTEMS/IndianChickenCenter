@@ -642,6 +642,7 @@ service cloud.firestore {
     // The next number to give out in a financial year. It moves by exactly one, only with the bill that takes it.
     match /billCounters/{year} {
       allow get: if can('bill.send');
+      allow list: if can('users.manage'); // the owner's backup reads every counter
       allow create, update: if can('bill.send')
         && request.resource.data.keys().hasOnly(['financialYear', 'next', 'lastBillId'])
         && request.resource.data.financialYear == year

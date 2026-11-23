@@ -48,6 +48,11 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
   screen and PDF both show), paginate. `src/pdf/billPdf.ts` (lazy) draws pages on a canvas (browser fonts handle
   Kannada and ₹) and puts them in an A4 PDF with pdf-lib; shareOrDownload uses Web Share with files, else downloads.
   Bills are issued through `issueBill()` in store.ts: demo counter, or a Firestore transaction on `billCounters/{FY}`.
+- `src/backup/` (P7) — `backup.ts` (pure: file format, SHA-256 of canonical data, counts, full-recompute balances,
+  checkBackup, verifyCopy, planRestore), `drive.ts` (Drive REST, drive.file scope, fetch injected), `connect.ts`
+  (reauthenticateWithPopup for the Drive token, memory only), `collect.ts` (owner's full read), `flow.ts` (back up →
+  read back → check → mark verified), `restore.ts` (Firestore REST, create-only writes). Page: `src/pages/backup.tsx`.
+  Tools: `scripts/restore.ts` (`npm run restore`), `scripts/emulator-backup.ts` (`npm run emulator:backup`), run by jiti.
 - `src/data/docs.ts` — how engine records are stored in Firestore (paths, document shapes, `DocWrite` batches). Pure TS.
   `src/data/diff.ts` — the writes a command made (new trips first and alone; at most 4 records per batch for the rules' look-up limit).
   Purchase rates live in `trips/{id}/purchases`, money totals in `trips/{id}/totals/close` (drivers cannot read them).
@@ -72,6 +77,8 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
   http://127.0.0.1:5174 (data kept in `.emulator-data/`); `node scripts/emulator-add-user.mjs <email> owner "<name>"`
   makes an emulator account the owner
 - `npm run deploy:rules -- --project <id>` — deploy rules (needs `npx firebase login`; ask before deploying)
+- `npm run restore -- <backup.json> (--emulator [--database restore-check] | --project <id>) [--apply]` — restore tool;
+  dry run unless --apply (never run --apply against a real project without the owner's say-so)
 
 ## Status
 P2 money engine built: 49 F-* + 18 ENG-* + 10 G-* tests pass. Gate A answered on 22 Nov 2026 except U-10 and U-12;
@@ -92,4 +99,7 @@ snapshots over a read window (D-27). Tests: 108 unit (adds LW-* and DIFF-*) and 
 P6 bills built (branch p6-bills): statement → "Issue bill" (ICC/2026-27/0001, online transaction, frozen content),
 issued bills on the customer, Share PDF / WhatsApp text / Print, English and Kannada. Tests: 115 unit (adds BD-*,
 ST-06, PDF-01) and 42 emulator (adds BR-01–04 and SY-10).
-Next: Gate B with the owner (README "Trying the prototype"), then P7 Google Drive backup and restore.
+P7 backup + restore built (branch p7-backup): owner's "Back up now" to Drive (drive.file), read back and checked
+before "Verified"; check any backup file; compare with the cloud; restore tool adds only missing records (D-29).
+Tests: 121 unit (adds B-01–B-06 preview) and 45 emulator (adds B-04, B-06, B-06b).
+Next: Gate B with the owner (README "Trying the prototype"), then P8 device checks and P9 deploy.

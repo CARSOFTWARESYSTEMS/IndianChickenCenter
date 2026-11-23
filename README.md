@@ -54,7 +54,11 @@ npm run dev
 - **P6 bills:** built.
   - A bill starts as a statement. "Issue bill" gives it the next number for the financial year (ICC/2026-27/0001) and freezes its lines and totals. Issued bills are listed on the customer.
   - Share as a PDF (English or Kannada) through the phone's share sheet, send the text on WhatsApp, or print. Offline, the bill can still be shared as a statement; numbers need the internet.
-- **Next:** Gate B with the owner, then P7 (Google Drive backup and restore).
+- **P7 backup and restore:** built.
+  - The owner taps "Back up now": every record goes to one file in their Google Drive. The app then reads the copy back and checks it, and only then shows "Verified". Only the `drive.file` permission is asked for.
+  - Any backup can be checked again: checksum, counts, every balance recomputed from all entries, and every month-end snapshot. It can also be compared with the cloud to see what is missing.
+  - Restoring adds back only missing records, with a tool on a computer (`npm run restore`); nothing is ever overwritten.
+- **Next:** Gate B with the owner, then P8 (checks on real phones and computers).
 
 ## Trying the prototype (Gate B)
 

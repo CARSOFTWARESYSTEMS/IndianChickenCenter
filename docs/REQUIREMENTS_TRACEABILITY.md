@@ -44,6 +44,8 @@ The full 36-row traceability matrix stays in `Indian_Chicken_Center_Plan.md` (Pa
 | D-26 | Month-end closes go in order for each customer | The rules then need only one "closed through" month per customer |
 | D-27 | Each phone reads last month and this month (plus month-end snapshots), not the whole history | Keeps daily reads inside the free plan while months are closed on time (KNOWN_LIMITATIONS.md) |
 | D-28 | Anyone who sends bills (owner, manager, driver) can issue a numbered bill; numbers run per financial year from 0001 | The D-17 table lets drivers send bills. One series per year matches how GST bills are usually numbered; the accountant should confirm (open question 2) |
+| D-29 | Restoring is done with a tool on a computer (project admin access), not in the app; it adds only missing records | The rules only accept records written now by the person signed in. Loosening them for restores would let the owner's phone write any record. The app shows the preview (B-06). |
+| D-30 | Only the owner makes and checks backups; a backup holds every record, including team members' names and emails | A backup is the whole business; it stays in the owner's own Drive |
 
 ### Role split (D-17)
 

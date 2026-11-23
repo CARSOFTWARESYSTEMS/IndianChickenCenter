@@ -86,6 +86,10 @@ Tests LW-01–05 check each of these against the full ledger on the source examp
 - An issued bill is dated the day it is issued (by the cloud's clock), cannot cover days after that, and never changes. A later payment shows on the next bill, not on this one (ST-06).
 - The screen, the PDF and the WhatsApp text show the same lines: previous balance, each sale (kg × rate), items total, each payment, paid, reversals and adjustments, balance due (or advance).
 
+## 3d. Backups (P7)
+
+A backup holds every record and every customer's balance from a **full recompute** of all their entries. Checking a backup recomputes them again from the file, compares them with the file's own figures, and checks every month-end snapshot against a recompute of its month. This is the full re-check a phone cannot do from its read window (section 3b). A backup is "Verified" only when the copy read back from Drive passes all of this and has the checksum it was saved with.
+
 ## 4. Open questions found while building
 
 - **Correcting a sale after the trip closes.** A closed trip is read-only, so its sales cannot be reversed (ENG-09). Options:
@@ -107,6 +111,8 @@ Tests LW-01–05 check each of these against the full ledger on the source examp
 | `__tests__/bill-document.test.ts` | BD-01–05: bill numbers per financial year, the source month as printed (English and Kannada), pages, file names |
 | `src/pdf/__tests__/pdf.test.ts` | PDF-01: one A4 page per drawn page |
 | `tests/rules/bills.test.ts` (emulator) | BR-01–04: numbers without gaps or repeats, dated today, totals add up, never changed |
+| `src/backup/__tests__/backup.test.ts` | B-01 (drive.file only), B-02 (file format, SHA-256, no tokens), B-03 (upload and read back, fake Drive), B-05 and B-05b (verified only when the copy passes; snapshot re-check), B-06 preview |
+| `tests/backup/restore.test.ts` (emulator) | B-04 (restore into an empty database: same records, counts and balances), B-06 (adds only missing records, never overwrites), B-06b (a failed file is refused) |
 | `__tests__/engine-extras.test.ts` | ENG-01–18 (input parsing, U-01 gate, fixed ids, closed month and trip, S-* rule mirrors, rate change not reversible) |
 | `__tests__/gate-a-decisions.test.ts` | G-01–09 and G-04b (rounding, payment methods, vehicles, trip rate, shop sale, labour, roles, Kannada bill, settings) |
 | `__tests__/ledger-window.test.ts` | LW-01–05 and LW-03b: balance, previous balance, passbook, bill and month end from a window plus snapshots |

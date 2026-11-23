@@ -15,7 +15,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "emulators": "sh scripts/firebase.sh emulators:start --only auth,firestore --project demo-icc --import .emulator-data --export-on-exit",
-    "deploy:rules": "sh scripts/firebase.sh deploy --only firestore:rules,firestore:indexes"
+    "deploy:rules": "sh scripts/firebase.sh deploy --only firestore:rules,firestore:indexes",
+    "restore": "jiti scripts/restore.ts",
+    "emulator:backup": "jiti scripts/emulator-backup.ts"
   },
   "dependencies": {
     "firebase": "^13.2.0",
@@ -32,6 +34,7 @@
     "@vite-pwa/assets-generator": "^2.0.0",
     "@vitejs/plugin-react": "^6.3.0",
     "firebase-tools": "^15.35.0",
+    "jiti": "^2.7.0",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",

@@ -17,6 +17,7 @@ import { TripDetailPage, TripsPage } from './pages/trips'
 import './styles/index.css'
 
 const PeoplePage = lazy(() => import('./pages/people'))
+const BackupPage = lazy(() => import('./pages/backup'))
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root element')
@@ -51,6 +52,14 @@ createRoot(root).render(
                   element={
                     <Suspense>
                       <PeoplePage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="more/backup"
+                  element={
+                    <Suspense>
+                      <BackupPage />
                     </Suspense>
                   }
                 />
