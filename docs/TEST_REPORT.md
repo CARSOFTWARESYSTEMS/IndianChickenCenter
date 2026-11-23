@@ -4,19 +4,20 @@
 
 The plan's rule: nothing is marked working on a device until it has been seen working on that device. The app is "production-ready" only when every cell of the device table below is filled in.
 
-- Branch: `p8-devices`
+- Branch: `p9-deploy`
 - Last updated: 23 Nov 2026
+- Live app: https://indian-chicken-ujire.web.app
 
 ## 1. Automated tests
 
 | Suite | Command | Result (23 Nov 2026) |
 | --- | --- | --- |
-| Money engine, store, bills, backup, map pin | `npm test` | 126 passed |
+| Money engine, store, bills, backup, map pin, deploy settings | `npm test` | 130 passed |
 | Security rules, offline sync, restore (Firestore emulator) | `npm run test:emulator` | 46 passed |
 | Types | `npm run typecheck` | Clean |
 | Production build | `npm run build` | Builds; 31 files kept for offline use |
 
-The 126 unit tests:
+The 130 unit tests:
 
 | Tests | Count |
 | --- | --- |
@@ -33,6 +34,7 @@ The 126 unit tests:
 | PDF-01 | 1 |
 | B-01–B-06 (backup) | 6 |
 | LOC-01–05 (map pin) | 5 |
+| DEP-01–04 (deploy settings) | 4 |
 
 The 46 emulator tests:
 
@@ -101,7 +103,27 @@ Seen but not changed (looks only):
 - On a 375 px screen the bill buttons "Share PDF" and "WhatsApp text" wrap onto two lines.
 - The iPhone system font draws a wider gap after "₹" than Chrome does.
 
-## 3. Real devices (DV-01 to DV-08)
+## 3. Production smoke test
+
+`npm run smoke -- https://indian-chicken-ujire.web.app --project indian-chicken-ujire` ran on 23 Nov 2026, right after the first deploy. **All 11 checks passed.**
+
+| ID | Check |
+| --- | --- |
+| SM-01 | The app page loads (the real sign-in screen, not demo data) |
+| SM-02 | A deep link opens the app |
+| SM-03 | The service worker, page and manifest are re-checked on every visit |
+| SM-03b | The service worker leaves Firebase's `/__/` pages (Google sign-in) to Firebase |
+| SM-04 | Fingerprinted files are cached for a year |
+| SM-05 | The install manifest is served as a manifest |
+| SM-06 | Security headers are set |
+| SM-07 | The built app signs in through `indian-chicken-ujire.web.app` itself |
+| SM-08 | Firebase's sign-in helper is served on that domain |
+| SM-09 | The hosting belongs to `indian-chicken-ujire` |
+| SM-10 | The live database refuses a reader who is not signed in (S-01 in production) |
+
+Google sign-in itself is not checked yet. It needs the console steps in SETUP_AND_DEPLOY.md §9 (turn on Google sign-in, add the redirect address) and the first owner.
+
+## 4. Real devices (DV-01 to DV-08)
 
 Fill each cell with ✓ (seen working), ✗ (failed: add a line to the log), or — (not applicable). Every ✓ needs a log line with the device, OS version, date and tester.
 
@@ -122,10 +144,10 @@ Fill each cell with ✓ (seen working), ✗ (failed: add a line to the log), or 
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | | | | | | | | |
 
-## 4. How to run the device checks
+## 5. How to run the device checks
 
 ### Before you start
-- **The app on its real address.** The app must be served from Firebase Hosting, with the sign-in domain (`authDomain`) set to that same address (plan trap 2, D-02). Google sign-in on iPhones depends on it, so it cannot be checked from a laptop. Either do the P9 deploy first, or deploy a Firebase Hosting preview channel and add its address to the authorised domains in Firebase Authentication.
+- **The app on its real address:** https://indian-chicken-ujire.web.app (deployed in P9, with the sign-in domain set to that same address, plan trap 2, D-02). First finish the console steps in SETUP_AND_DEPLOY.md §9, or nobody can sign in.
 - **Accounts.** The owner's Google account is set up as owner, and one driver account has been invited (More → People).
 - **Test customer.** A customer whose phone number has WhatsApp. Use your own second number, not a real customer's.
 - **Trip.** A trip open today with some stock loaded, so a sale can be recorded.
@@ -201,7 +223,7 @@ On a bill, tap **Print**.
 
 **Pass:** the print preview shows only the bill (no buttons or tabs), on one A4 page per page of the bill, readable in both languages.
 
-## 5. What to expect on each device
+## 6. What to expect on each device
 
 | Device | Expected differences |
 | --- | --- |

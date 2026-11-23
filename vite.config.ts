@@ -31,6 +31,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
         navigateFallback: '/index.html',
+        // Firebase's own pages on this domain (/__/auth/handler for Google sign-in, P9) must reach Firebase
+        // Hosting; answering them with the app would send sign-in in a circle.
+        navigateFallbackDenylist: [/^\/__\//],
       },
     }),
   ],

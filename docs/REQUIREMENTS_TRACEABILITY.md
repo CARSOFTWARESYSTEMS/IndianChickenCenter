@@ -46,6 +46,7 @@ The full 36-row traceability matrix stays in `Indian_Chicken_Center_Plan.md` (Pa
 | D-28 | Anyone who sends bills (owner, manager, driver) can issue a numbered bill; numbers run per financial year from 0001 | The D-17 table lets drivers send bills. One series per year matches how GST bills are usually numbered; the accountant should confirm (open question 2) |
 | D-29 | Restoring is done with a tool on a computer (project admin access), not in the app; it adds only missing records | The rules only accept records written now by the person signed in. Loosening them for restores would let the owner's phone write any record. The app shows the preview (B-06). |
 | D-30 | Only the owner makes and checks backups; a backup holds every record, including team members' names and emails | A backup is the whole business; it stays in the owner's own Drive |
+| D-31 | The live Firebase project `indian-chicken-ujire` (Firestore in `asia-south1`, Mumbai) is under the CAR Software Systems Google account; the app is at https://indian-chicken-ujire.web.app | Set up by the developer for P9. Before handover, add the owner's Google account as a project Owner in the Firebase console so the business never depends on one person's account. |
 
 ### Role split (D-17)
 

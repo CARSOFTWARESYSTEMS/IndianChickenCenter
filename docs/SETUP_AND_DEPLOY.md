@@ -9,7 +9,7 @@ Status (P7): signed in, everything is saved in Firestore: sign-in, roles, People
 1. In the [Firebase console](https://console.firebase.google.com), add a project. The free Spark plan is enough; Analytics is not needed.
 2. **Authentication** → Get started → Sign-in method → **Google** → Enable. Choose the support email.
 3. **Firestore Database** → Create database → production mode. Location: a region near Ujire, e.g. `asia-south1` (Mumbai). The location cannot be changed later.
-4. **Project settings** → Your apps → add a **Web** app. Copy its values into `.env.local` (start from `.env.example`):
+4. **Project settings** → Your apps → add a **Web** app. Copy its values into `.env.production.local` for the hosted app (§9), or `.env.local` to try it from this computer (start from `.env.example`):
 
    | `.env.local` | Firebase config value |
    | --- | --- |
@@ -144,4 +144,56 @@ The real-device checks (DV-01 to DV-08) and their results are in `docs/TEST_REPO
 
 ## 9. Deploy the app (P9)
 
-Firebase Hosting serves `dist/` with a rewrite to `index.html` (`firebase.json`). The full production checklist (auth domain, smoke test) is part of P9.
+**The live project (23 Nov 2026):**
+- **Project:** `indian-chicken-ujire`, display name "Indian Chicken Center", under the CAR Software Systems Google account.
+- **Firestore:** Native mode, `asia-south1` (Mumbai).
+- **App address:** https://indian-chicken-ujire.web.app
+
+### Settings for the production build
+Put them in `.env.production.local`, which is never committed (start from `.env.example`):
+- The values come from Firebase console → Project settings → Your apps, or from `firebase apps:sdkconfig WEB <app id>`.
+- `VITE_FIREBASE_AUTH_DOMAIN` must be the app's address, `indian-chicken-ujire.web.app`, not the `firebaseapp.com` default.
+- `npm run dev` does not read this file, so development stays on demo data.
+
+### Deploy
+```bash
+npm run deploy -- --project indian-chicken-ujire --account <Google account that owns the project>
+```
+
+`scripts/deploy.sh` stops at the first failure, and nothing is deployed until every check before it has passed:
+1. checks the settings (`src/firebase/deployCheck.ts`): all present, emulators off, the right project, sign-in domain = app address
+2. typecheck and unit tests
+3. rule, sync and restore tests in the emulator
+4. production build
+5. deploys the rules, indexes and app together
+6. runs the smoke test
+
+**Smoke test** (`npm run smoke -- https://indian-chicken-ujire.web.app --project indian-chicken-ujire`, read-only):
+- SM-01, SM-02: the page and deep links load.
+- SM-03: the service worker, page and manifest are re-checked on every visit, so updates reach phones.
+- SM-03b: the service worker leaves Firebase's `/__/` pages to Firebase. Otherwise Google sign-in would loop.
+- SM-04: fingerprinted files are cached for a year.
+- SM-05: the install manifest is served as a manifest.
+- SM-06: security headers are set.
+- SM-07: the built app signs in through its own domain.
+- SM-08: Firebase's sign-in helper is served there.
+- SM-09: the hosting belongs to the project.
+- SM-10: the live database refuses a reader who is not signed in.
+
+`npm run smoke:local` runs SM-01 to SM-06 against the Firebase Hosting emulator, with no real project.
+
+### Once, after the first deploy (console steps the CLI cannot do)
+1. **Turn on Google sign-in.** Firebase console → Authentication → Get started → Sign-in method → **Google** → Enable, with the support email. This creates the Google OAuth client.
+2. **Allow sign-in through the app's own domain.** Google Cloud console → APIs & Services → Credentials → "Web client (auto created by Google Service)" → Authorised redirect URIs → add `https://indian-chicken-ujire.web.app/__/auth/handler`. Without it Google answers `redirect_uri_mismatch`, because the sign-in domain is not the `firebaseapp.com` default ([Firebase guidance](https://firebase.google.com/docs/auth/web/redirect-best-practices)).
+3. **Backups:**
+   - The Drive API is already on.
+   - Set up the OAuth consent screen (step 1.6), and add the owner as a test user or publish it.
+4. **Add the first owner** (step 3).
+5. **Run the real-device checks** in `docs/TEST_REPORT.md` on https://indian-chicken-ujire.web.app.
+
+### Updating the app later
+Run the same `npm run deploy` command. Phones show "A new version is ready" and update when tapped.
+
+To undo a bad release, use Firebase console → Hosting → release history → **Rollback**.
+
+Rules roll back by deploying the previous commit's `firestore.rules`. Entries already saved are never changed by a deploy.

@@ -61,7 +61,7 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
   `src/data/diff.ts` — the writes a command made (new trips first and alone; at most 4 records per batch for the rules' look-up limit).
   Purchase rates live in `trips/{id}/purchases`, money totals in `trips/{id}/totals/close` (drivers cannot read them).
   `src/data/rulesConstants.ts` generates the role table and value lists in `firestore.rules` from `src/domain`.
-- `src/firebase/` — `config.ts` (env), `client.ts` (lazy-loaded Auth + Firestore with persistentLocalCache, `commitWrites`),
+- `src/firebase/` — `deployCheck.ts` (P9: production settings checked before every deploy), `config.ts` (env), `client.ts` (lazy-loaded Auth + Firestore with persistentLocalCache, `commitWrites`),
   `session.tsx` (session states: demo, signedOut, notAuthorised, needsActivation, waitingForOwner, ready).
   `src/app/AuthGate.tsx` shows the app only when ready (or in demo mode) and starts the cloud store once signed in.
   `src/app/SyncBadge.tsx` — "Saved to cloud / Syncing / Saved on phone / Needs attention" with its sheet.
@@ -83,6 +83,9 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
   http://127.0.0.1:5174 (data kept in `.emulator-data/`); `node scripts/emulator-add-user.mjs <email> owner "<name>"`
   makes an emulator account the owner
 - `npm run deploy:rules -- --project <id>` — deploy rules (needs `npx firebase login`; ask before deploying)
+- `npm run deploy -- --project indian-chicken-ujire --account <email>` — full production deploy (scripts/deploy.sh: settings check,
+  all tests, build, rules + indexes + hosting, smoke test); needs `.env.production.local`. Ask before deploying.
+- `npm run smoke -- https://indian-chicken-ujire.web.app --project indian-chicken-ujire` (read-only); `npm run smoke:local` (hosting emulator)
 - `npm run restore -- <backup.json> (--emulator [--database restore-check] | --project <id>) [--apply]` — restore tool;
   dry run unless --apply (never run --apply against a real project without the owner's say-so)
 
@@ -111,4 +114,8 @@ Tests: 121 unit (adds B-01–B-06 preview) and 45 emulator (adds B-04, B-06, B-0
 P8 device checks prepared (branch p8-devices): persistent storage request + Settings → This phone (DV-06), shop map pin from
 location or typed/pasted (DV-07), docs/TEST_REPORT.md with the DV matrix and steps. Checked in Chrome's engine and on the
 iOS 17.5 simulators (iPhone SE, iPad) in Safari; no real device checked yet. Tests: 126 unit (adds LOC-01–05) and 46 emulator (adds R-17).
-Next: Gate B with the owner, P9 deploy, then the DV-* checks on real devices for Gate C.
+P9 deployed (branch p9-deploy): live at https://indian-chicken-ujire.web.app (project indian-chicken-ujire, Firestore asia-south1,
+D-31). firebase.json headers (assets immutable, sw/index/manifest no-cache, security headers), service worker leaves /__/ to
+Firebase (sign-in), deploy settings check (DEP-01–04), smoke test SM-01–10 all pass. Tests: 130 unit and 46 emulator.
+Still to do in the console: enable Google sign-in, add https://indian-chicken-ujire.web.app/__/auth/handler as a redirect URI,
+OAuth consent screen for Drive, first owner. Then Gate B on the live app and the DV-* checks for Gate C.

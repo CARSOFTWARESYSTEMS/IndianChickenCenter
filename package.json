@@ -18,6 +18,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "emulators": "sh scripts/firebase.sh emulators:start --only auth,firestore --project demo-icc --import .emulator-data --export-on-exit",
     "deploy:rules": "sh scripts/firebase.sh deploy --only firestore:rules,firestore:indexes",
+    "deploy": "sh scripts/deploy.sh",
+    "smoke": "jiti scripts/smoke.ts",
+    "smoke:local": "npm run build && sh scripts/firebase.sh emulators:exec --only hosting --project demo-icc 'npx --no-install jiti scripts/smoke.ts http://127.0.0.1:5002 --local'",
     "restore": "jiti scripts/restore.ts",
     "emulator:backup": "jiti scripts/emulator-backup.ts"
   },

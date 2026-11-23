@@ -62,7 +62,10 @@ npm run dev
   - `docs/TEST_REPORT.md` holds the automated results, the checks run in Chrome's engine and on the iPhone and iPad simulators, and the table of real-device checks (DV-01 to DV-08) with step-by-step instructions. Nothing there is marked working on a device yet.
   - The app now asks the browser to keep the entries saved on the phone; More → Settings → This phone shows whether it does.
   - The shop's map pin can be set in More → Business profile from the phone's location, or typed or pasted when location is blocked.
-- **Next:** Gate B with the owner, deploy (P9) so the real-device checks can be run on the app's real address, then Gate C.
+- **P9 deploy:** the app is live at **https://indian-chicken-ujire.web.app** (Firebase project `indian-chicken-ujire`, data in Mumbai).
+  - `npm run deploy -- --project indian-chicken-ujire --account <owner of the project>` checks the settings, runs every test, builds, deploys the rules and the app together, and smoke-tests the live address (11 checks).
+  - Before anyone can sign in, these steps are done once in the Firebase console: Google sign-in, the redirect address for the app's own domain, and the first owner (`docs/SETUP_AND_DEPLOY.md` §9).
+- **Next:** those console steps, Gate B with the owner on the live app, then the real-device checks (`docs/TEST_REPORT.md`) for Gate C.
 
 ## Trying the prototype (Gate B)
 
