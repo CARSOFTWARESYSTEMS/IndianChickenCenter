@@ -583,6 +583,74 @@ service cloud.firestore {
         && existsAfter(entryPath('snap_' + customerId + '_' + request.resource.data.closedThrough));
     }
 
-    // Everything else (bills in P6, backups in P7) is refused until it gets its own rules.
+    // ------------------------------------------------------------------
+    // Bills (P6): numbered per financial year from a counter, issued online in a transaction, never changed
+    // ------------------------------------------------------------------
+
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+    function pad4(n) {
+      return n < 10 ? '000' + string(n) : n < 100 ? '00' + string(n) : n < 1000 ? '0' + string(n) : string(n);
+    }
+    function billPath(id) {
+      return /databases/$(database)/documents/bills/$(id);
+    }
+    function counterPath(year) {
+      return /databases/$(database)/documents/billCounters/$(year);
+    }
+    // Today in Asia/Kolkata, by the cloud's clock: bills are dated the day they are issued.
+    function todayInKolkata() {
+      let t = request.time + duration.value(330, 'm');
+      return string(t.year()) + '-' + pad2(t.month()) + '-' + pad2(t.day());
+    }
+    // "2026-11-22" → "2026-27" (April to March).
+    function financialYearOf(date) {
+      let y = int(date.split('-')[0]);
+      let start = int(date.split('-')[1]) >= 4 ? y : y - 1;
+      return string(start) + '-' + pad2((start + 1) % 100);
+    }
+
+    // The bill takes the number the counter gave out in the same write, so numbers have no gaps and no repeats.
+    // Rules cannot add up ledger entries; they check that the bill's own totals add up.
+    function validBill(billId, d) {
+      let b = d.bill;
+      let counter = getAfter(counterPath(d.financialYear)).data;
+      return can('bill.send')
+        && d.keys().hasOnly(['id', 'number', 'financialYear', 'sequence', 'customerId', 'issuedOn', 'issuedBy', 'bill'])
+        && d.id == billId && d.issuedBy == uid()
+        && isDate(d.issuedOn) && d.issuedOn == todayInKolkata()
+        && d.financialYear == financialYearOf(d.issuedOn)
+        && d.sequence is int && d.sequence >= 1
+        && d.number == 'ICC/' + d.financialYear + '/' + pad4(d.sequence)
+        && isId(d.customerId) && exists(customerPath(d.customerId))
+        && counter.lastBillId == billId && counter.next == d.sequence + 1
+        && b is map && b.customerId == d.customerId
+        && isDate(b.from) && isDate(b.to) && b.from <= b.to && b.to <= d.issuedOn
+        && b.previousBalance is int && b.itemsGrams is int && b.itemsAmount is int
+        && b.paid is int && b.otherNet is int && b.currentBalance is int
+        && b.currentBalance == b.previousBalance + b.itemsAmount - b.paid + b.otherNet
+        && b.items is list && b.payments is list && b.other is list
+        && b.items.size() + b.payments.size() + b.other.size() <= 1000;
+    }
+
+    match /bills/{billId} {
+      allow get, list: if can('customer.viewBalance');
+      allow create: if validBill(billId, request.resource.data);
+    }
+
+    // The next number to give out in a financial year. It moves by exactly one, only with the bill that takes it.
+    match /billCounters/{year} {
+      allow get: if can('bill.send');
+      allow create, update: if can('bill.send')
+        && request.resource.data.keys().hasOnly(['financialYear', 'next', 'lastBillId'])
+        && request.resource.data.financialYear == year
+        && request.resource.data.next == (resource == null ? 2 : resource.data.next + 1)
+        && isId(request.resource.data.lastBillId)
+        && !exists(billPath(request.resource.data.lastBillId))
+        && getAfter(billPath(request.resource.data.lastBillId)).data.sequence == request.resource.data.next - 1;
+    }
+
+    // Everything else (backups in P7) is refused until it gets its own rules.
   }
 }

@@ -13,6 +13,8 @@
  *   trips/{tripId}/totals/close    money totals at close                         owner, manager read
  *   ledgerEntries/{id}             LedgerEntry                                   append-only
  *   ledgerClosures/{customerId}    last closed month for that customer           owner
+ *   bills/{id}                     IssuedBill (numbered, content frozen)         anyone who sends bills; never changed
+ *   billCounters/{financialYear}   next bill number                              moves only with the bill that takes it
  *
  * Security rules cannot hide single fields, so what a driver may not see (purchase rates, profit) has its own
  * documents (KNOWN_LIMITATIONS.md).
@@ -44,6 +46,8 @@ export const paths = {
   tripTotals: (tripId: string) => `trips/${tripId}/totals/close`,
   ledgerEntry: (id: string) => `ledgerEntries/${id}`,
   ledgerClosure: (customerId: string) => `ledgerClosures/${customerId}`,
+  bill: (id: string) => `bills/${id}`,
+  billCounter: (financialYear: string) => `billCounters/${financialYear}`,
 }
 
 /** One trip per vehicle per day (U-06): the id says which, so a second trip cannot be created. */
@@ -112,6 +116,13 @@ export interface LedgerClosureDoc {
   customerId: string
   closedThrough: MonthKey
   closedBy: string
+}
+
+/** The next bill number to give out in a financial year, and the bill that took the last one. */
+export interface BillCounterDoc {
+  financialYear: string
+  next: number
+  lastBillId: string
 }
 
 export interface VehicleDoc {

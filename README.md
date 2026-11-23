@@ -51,7 +51,10 @@ npm run dev
   - Every entry is saved on the phone first and sent when there is internet. A badge shows "Saved to cloud", "Syncing", "Saved on phone" or "Needs attention". Entries still on the phone say so under their line.
   - If the cloud refuses an entry (say the trip was closed on another phone), it appears under "Needs attention" with the reason, and balances leave it out.
   - Each phone reads last month and this month, and balances start from the last month-end close. This keeps daily reads inside the free plan.
-- **Next:** Gate B with the owner, then P6 (bills as PDF, bill numbers).
+- **P6 bills:** built.
+  - A bill starts as a statement. "Issue bill" gives it the next number for the financial year (ICC/2026-27/0001) and freezes its lines and totals. Issued bills are listed on the customer.
+  - Share as a PDF (English or Kannada) through the phone's share sheet, send the text on WhatsApp, or print. Offline, the bill can still be shared as a statement; numbers need the internet.
+- **Next:** Gate B with the owner, then P7 (Google Drive backup and restore).
 
 ## Trying the prototype (Gate B)
 
@@ -65,7 +68,7 @@ Run `npm run dev` and open it on a phone, or use the Browser pane. Settings come
 4. **Sell.** Record sale: pick a customer, enter the kg (the rate is the trip rate), and optionally the amount paid now with Cash, UPI or Bank.
 5. **Expenses.** Add labour per person (Driver, Labour 1–5 with names) or as one total, plus food and other costs.
 6. **Finish.** Sell what is left at the shop, or record wastage, then Close trip. Both profit options appear; any difference between them is shown.
-7. **Payment and bill.** On a customer, tap Payment, then Bill. Choose a period and English or ಕನ್ನಡ, then send on WhatsApp (add the customer's mobile number first) or Print.
+7. **Payment and bill.** On a customer, tap Payment, then Bill. Choose a period and English or ಕನ್ನಡ. Tap **Issue bill** to give it the next number (ICC/2026-27/0001); the issued bill then appears under Bills on the customer. **Share PDF** opens the phone's share sheet (WhatsApp is one of the choices); **WhatsApp text** opens the chat with the bill as text (add the customer's mobile number first); **Print** prints it.
 8. **Month end.** Ledger → Close (last month).
 9. **Roles.** More → Acting as → Driver. The driver sees only his trips, sells at the trip rate, and sees no purchase rates or profit.
 10. **Start again.** More → Reset demo data.

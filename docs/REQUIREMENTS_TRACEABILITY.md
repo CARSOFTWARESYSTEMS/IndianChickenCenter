@@ -43,6 +43,7 @@ The full 36-row traceability matrix stays in `Indian_Chicken_Center_Plan.md` (Pa
 | D-25 | A trip-rate change is never reversed; the owner or manager sets the rate again | The trip keeps its current rate, and the rules check drivers' sales against it (ENG-18) |
 | D-26 | Month-end closes go in order for each customer | The rules then need only one "closed through" month per customer |
 | D-27 | Each phone reads last month and this month (plus month-end snapshots), not the whole history | Keeps daily reads inside the free plan while months are closed on time (KNOWN_LIMITATIONS.md) |
+| D-28 | Anyone who sends bills (owner, manager, driver) can issue a numbered bill; numbers run per financial year from 0001 | The D-17 table lets drivers send bills. One series per year matches how GST bills are usually numbered; the accountant should confirm (open question 2) |
 
 ### Role split (D-17)
 

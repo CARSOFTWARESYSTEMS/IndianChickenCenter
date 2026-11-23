@@ -3,7 +3,10 @@
  * so every rule (roles, stock, rounding, append-only) applies exactly as in the tests.
  */
 import {
+  buildBill,
   closeMonth,
+  financialYearOf,
+  makeIssuedBill,
   closeTrip,
   isFinancial,
   makeCustomer,
@@ -28,7 +31,9 @@ import {
   updateCustomer,
   validateSettings,
   type Actor,
+  type Bill,
   type BusinessSettings,
+  type IssuedBill,
   type Customer,
   type IsoDate,
   type LedgerEntry,
@@ -330,6 +335,43 @@ export function closeMonthForAll(month: MonthKey, date: IsoDate) {
       count++
     }
     return done({ ...s, ledger }, count)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Bills
+// ---------------------------------------------------------------------------
+
+export interface IssueBillInput {
+  /** Made when the bill screen opens and reused on retry, so a double tap cannot take two numbers. */
+  id: string
+  customerId: string
+  from: IsoDate
+  to: IsoDate
+  /** Today: the issue date, which also picks the financial year. */
+  date: IsoDate
+}
+
+/** The bill as it stands now, checked for who may issue it. The number is added by whoever keeps the counter. */
+export function billToIssue(s: AppState, input: IssueBillInput): Result<Bill> {
+  const allowed = requireCapability(actorOf(s), 'bill.send')
+  if (!allowed.ok) return allowed
+  if (!s.customers.some((c) => c.id === input.customerId)) return fail('invalid_input', 'Customer not found')
+  return buildBill(s.ledger, input.customerId, { from: input.from, to: input.to }, s.ledgerWindow)
+}
+
+/** Demo store: numbers come from the demo's own counter. A retry with the same id returns the same bill. */
+export function issueBillCommand(input: IssueBillInput) {
+  return (s: AppState): Result<Next<IssuedBill>> => {
+    const existing = s.bills.find((b) => b.id === input.id)
+    if (existing) return done(s, existing)
+    const bill = billToIssue(s, input)
+    if (!bill.ok) return bill
+    const year = financialYearOf(input.date)
+    const sequence = (s.billCounters?.[year] ?? 0) + 1
+    const issued = makeIssuedBill({ id: input.id, bill: bill.value, sequence, issuedOn: input.date, issuedBy: actorOf(s).actorId })
+    if (!issued.ok) return issued
+    return done({ ...s, bills: [...s.bills, issued.value], billCounters: { ...s.billCounters, [year]: sequence } }, issued.value)
   }
 }
 

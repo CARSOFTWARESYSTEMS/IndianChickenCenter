@@ -52,6 +52,7 @@ User input is parsed from text (`parseKg`, `parseRupees`, …), never through fl
 | 8 | Silent | Displayed Option 1 parts round to the nearest paisa (halves away from zero); profit itself is exact | Parts can differ from the profit by at most 1 paisa when shown |
 | 9 | Silent | A trip-rate change (DEFAULT_RATE) cannot be reversed; a new rate replaces it (ENG-18, D-25) | The stored trip holds the current rate, which the rules check drivers' sales against |
 | 10 | D-06: auto-IDs | A stored trip's id is `trip_<date>_<vehicle>` | Makes "one trip per vehicle per day" (U-06) enforceable by the rules |
+| 11 | bills/{id}: entry IDs and totals at issue | An issued bill keeps its whole content: every line (with its entry id) and the totals | The bill can be shared again later, even when its entries are no longer loaded on the phone (the read window) |
 
 ## 3a. The same rules on the server (P4)
 
@@ -78,6 +79,13 @@ A phone does not read the whole ledger (free-plan reads). It reads every entry d
 
 Tests LW-01–05 check each of these against the full ledger on the source example (₹10,778 in October, ₹11,178 after November). SY-07 checks a month-end close in the emulator with October's entries not loaded.
 
+## 3c. Bills (P6)
+
+- A bill is built only from ledger entries (section 2). Until it is issued it is a **statement**.
+- **Issuing** gives it the next number for the Indian financial year, `ICC/2026-27/0001`, starting again at 0001 each April (D-07). The number comes from a counter in the cloud, in one transaction with the bill, so numbers have no gaps and no repeats. The rules check both. Demo mode keeps its own counter.
+- An issued bill is dated the day it is issued (by the cloud's clock), cannot cover days after that, and never changes. A later payment shows on the next bill, not on this one (ST-06).
+- The screen, the PDF and the WhatsApp text show the same lines: previous balance, each sale (kg × rate), items total, each payment, paid, reversals and adjustments, balance due (or advance).
+
 ## 4. Open questions found while building
 
 - **Correcting a sale after the trip closes.** A closed trip is read-only, so its sales cannot be reversed (ENG-09). Options:
@@ -96,6 +104,9 @@ Tests LW-01–05 check each of these against the full ledger on the source examp
 | `__tests__/profit.test.ts` | F-PRF-01–06 |
 | `__tests__/ledger.test.ts` | F-LED-01–12 |
 | `__tests__/bill-format.test.ts` | F-BILL-01–02, F-FMT-01 |
+| `__tests__/bill-document.test.ts` | BD-01–05: bill numbers per financial year, the source month as printed (English and Kannada), pages, file names |
+| `src/pdf/__tests__/pdf.test.ts` | PDF-01: one A4 page per drawn page |
+| `tests/rules/bills.test.ts` (emulator) | BR-01–04: numbers without gaps or repeats, dated today, totals add up, never changed |
 | `__tests__/engine-extras.test.ts` | ENG-01–18 (input parsing, U-01 gate, fixed ids, closed month and trip, S-* rule mirrors, rate change not reversible) |
 | `__tests__/gate-a-decisions.test.ts` | G-01–09 and G-04b (rounding, payment methods, vehicles, trip rate, shop sale, labour, roles, Kannada bill, settings) |
 | `__tests__/ledger-window.test.ts` | LW-01–05 and LW-03b: balance, previous balance, passbook, bill and month end from a window plus snapshots |
@@ -103,7 +114,7 @@ Tests LW-01–05 check each of these against the full ledger on the source examp
 | `src/data/__tests__/diff.test.ts` | DIFF-01–07: what each command saves, and in which batches |
 | `src/data/__tests__/rules-constants.test.ts` | RC-01–02: the role table and value lists in `firestore.rules` match the engine |
 | `tests/rules/*.test.ts` (emulator) | S-01–S-10 from the plan, R-01–R-16 (drivers, visibility, invites, settings, customers, vehicles, trips, loading, rates, month end, opening balance, fuel, shop sales, orders, cross-trip reads) |
-| `tests/sync/sync.test.ts` (emulator) | SY-01–SY-06 from the plan, SY-07–09 (month end from a window, loading rate kept apart, saves left over after a restart) |
+| `tests/sync/sync.test.ts` (emulator) | SY-01–SY-06 from the plan, SY-07–10 (month end from a window, loading rate kept apart, saves left over after a restart, bill numbers online) |
 
 Expected values are literal numbers checked by hand, never computed by the engine. To confirm the tests can fail, the engine was broken on purpose and then restored:
 - truncating paise was swapped for rounding: 19 tests failed

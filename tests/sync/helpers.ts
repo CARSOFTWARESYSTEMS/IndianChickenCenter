@@ -28,7 +28,11 @@ export function device(uid: string): { db: Firestore } {
 }
 
 /** The app's cloud store on its own device. Only one store runs at a time (it is the app's single store). */
-export async function phone(uid: string, role: Role, options: { today?: string; storage?: Map<string, string> } = {}) {
+export async function phone(
+  uid: string,
+  role: Role,
+  options: { today?: string; storage?: Map<string, string>; online?: () => boolean } = {},
+) {
   const { db } = device(uid)
   const storage = options.storage ?? new Map<string, string>()
   const store = startCloud({
@@ -37,6 +41,7 @@ export async function phone(uid: string, role: Role, options: { today?: string; 
     role,
     today: options.today ?? TODAY,
     storage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => void storage.set(k, v) },
+    ...(options.online ? { online: options.online } : {}),
   })
   const entry = opened.at(-1)
   if (entry) entry.store = store

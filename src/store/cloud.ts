@@ -21,6 +21,7 @@ import {
   getDocFromServer,
   onSnapshot,
   query,
+  runTransaction,
   waitForPendingWrites,
   where,
   type DocumentData,
@@ -32,7 +33,10 @@ import {
 import {
   can,
   DEFAULT_SETTINGS,
+  fail,
+  financialYearOf,
   firstDayOfMonth,
+  makeIssuedBill,
   monthOf,
   nextMonth,
   ok,
@@ -40,6 +44,8 @@ import {
   todayInKolkata,
   type BusinessSettings,
   type Customer,
+  type DomainError,
+  type IssuedBill,
   type IsoDate,
   type LedgerEntry,
   type Result,
@@ -49,10 +55,22 @@ import {
 } from '../domain'
 import { canonical } from '../domain/util'
 import { changesBetween, type Change } from '../data/diff'
-import type { DocWrite, LedgerClosureDoc, PurchaseDoc, SettingsDoc, TripDoc, TripTotalsDoc, UserDoc } from '../data/docs'
+import {
+  paths,
+  withoutUndefined,
+  type BillCounterDoc,
+  type DocWrite,
+  type LedgerClosureDoc,
+  type PurchaseDoc,
+  type SettingsDoc,
+  type TripDoc,
+  type TripTotalsDoc,
+  type UserDoc,
+} from '../data/docs'
 import { commitWrites } from '../firebase/client'
 import { newId } from './ids'
 import type { AppState } from './state'
+import { billToIssue, type IssueBillInput } from './commands'
 import { attachBackend, storeChanged, type Backend, type Command } from './store'
 import { getSync, onItemsChange, resetSync, setSync, type SyncItem } from './sync'
 
@@ -66,7 +84,12 @@ export interface CloudOptions {
   today?: IsoDate
   /** Where unconfirmed saves are kept across restarts; tests pass an in-memory map. */
   storage?: Pick<Storage, 'getItem' | 'setItem'>
+  /** Whether the phone has a connection (default: the browser's own flag). Tests switch it. */
+  online?: () => boolean
 }
+
+/** How long to wait for a bill number before calling the connection too poor. */
+const ISSUE_TIMEOUT_MS = 20_000
 
 export interface CloudStore extends Backend {
   /** Resolves once the first reads have arrived. */
@@ -142,6 +165,7 @@ export function startCloud(options: CloudOptions): CloudStore {
   const today = options.today ?? todayInKolkata()
   const storage = options.storage ?? safeStorage()
   const viewAll = can(role, 'trip.viewAll')
+  const isOnline = options.online ?? (() => typeof navigator === 'undefined' || navigator.onLine !== false)
 
   /** Documents per listener, by path. A document can come from more than one listener. */
   const sources = new Map<string, Map<string, Data>>()
@@ -160,7 +184,7 @@ export function startCloud(options: CloudOptions): CloudStore {
   })
 
   function emptyState(): AppState {
-    return { version: 1, settings: DEFAULT_SETTINGS, users: [], actorId: uid, vehicles: [], customers: [], trips: [], tripEvents: [], ledger: [] }
+    return { version: 1, settings: DEFAULT_SETTINGS, users: [], actorId: uid, vehicles: [], customers: [], trips: [], tripEvents: [], ledger: [], bills: [] }
   }
 
   // ---------------------------------------------------------------------------
@@ -229,6 +253,7 @@ export function startCloud(options: CloudOptions): CloudStore {
     from = windowStart(today, customers, closures)
     const start = `trip_${from}`
     listen('ledger', query(collection(db, 'ledgerEntries'), where('date', '>=', from)))
+    listen('bills', query(collection(db, 'bills'), where('issuedOn', '>=', from)))
     const earliestClosed = closures.map((c) => c.closedThrough).sort()[0]
     if (earliestClosed) listen('snapshots', query(collection(db, 'ledgerEntries'), where('month', '>=', earliestClosed)))
     if (viewAll) {
@@ -293,6 +318,7 @@ export function startCloud(options: CloudOptions): CloudStore {
     const purchases = new Map<string, PurchaseDoc>()
     const totals = new Map<string, TripTotalsDoc>()
     const ledger: LedgerEntry[] = []
+    const bills: IssuedBill[] = []
 
     for (const [path, data] of all) {
       const p = path.split('/')
@@ -307,6 +333,7 @@ export function startCloud(options: CloudOptions): CloudStore {
       else if (p[0] === 'customers') customers.push(data as unknown as Customer)
       else if (p[0] === 'ledgerClosures') closures.push(data as unknown as LedgerClosureDoc)
       else if (p[0] === 'ledgerEntries') ledger.push(data as unknown as LedgerEntry)
+      else if (p[0] === 'bills') bills.push(data as unknown as IssuedBill)
       else if (p[0] === 'trips' && p[1]) {
         if (p.length === 2) trips.set(p[1], data as unknown as TripDoc)
         else if (p[2] === 'events') events.push({ path, data })
@@ -332,6 +359,7 @@ export function startCloud(options: CloudOptions): CloudStore {
       tripEvents: events.map(({ data }) => eventOf(data, purchases.get(`${String(data.tripId)}/${String(data.id)}`))),
       ledger,
       ...(from ? { ledgerWindow: { from } } : {}),
+      bills,
     }
     const isReady = from !== undefined && waiting.size === 0
     setSync({ cloud: true, pendingPaths: pending, ready: getSync().ready || isReady })
@@ -404,6 +432,63 @@ export function startCloud(options: CloudOptions): CloudStore {
   }
 
   // ---------------------------------------------------------------------------
+  // Bills: numbered online, in a transaction (plan §6)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Takes the next number for the financial year and stores the bill, both or neither. A transaction cannot run
+   * offline, which is the point: offline, the bill is shared as a statement without a number.
+   * A retry with the same id returns the bill already issued.
+   */
+  async function issueBill(input: IssueBillInput): Promise<Result<IssuedBill>> {
+    const existing = state.bills.find((b) => b.id === input.id)
+    if (existing) return ok(existing)
+    const bill = billToIssue(state, input)
+    if (!bill.ok) return bill
+    // A transaction does not wait for the network like a write does, so check before asking for a number.
+    if (!isOnline()) return fail('not_online', 'Connect to the internet to give the bill a number')
+    let refused: DomainError | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(Object.assign(new Error('timeout'), { code: 'deadline-exceeded' })), ISSUE_TIMEOUT_MS)
+    })
+    try {
+      const transaction = runTransaction(db, async (tx) => {
+        const billRef = doc(db, paths.bill(input.id))
+        const already = await tx.get(billRef)
+        if (already.exists()) return already.data() as IssuedBill
+        const year = financialYearOf(input.date)
+        const counterRef = doc(db, paths.billCounter(year))
+        const counter = await tx.get(counterRef)
+        const sequence = counter.exists() ? (counter.data() as BillCounterDoc).next : 1
+        const made = makeIssuedBill({ id: input.id, bill: bill.value, sequence, issuedOn: input.date, issuedBy: uid })
+        if (!made.ok) {
+          refused = made.error
+          throw new Error(made.error.message)
+        }
+        const next: BillCounterDoc = { financialYear: year, next: sequence + 1, lastBillId: input.id }
+        tx.set(counterRef, next)
+        tx.set(billRef, withoutUndefined(made.value))
+        return made.value
+      })
+      const issued = await Promise.race([transaction, timeout])
+      overlay.set(paths.bill(issued.id), { op: 'set', path: paths.bill(issued.id), data: issued as unknown as Data })
+      rebuild()
+      return ok(issued)
+    } catch (err) {
+      if (refused) return { ok: false, error: refused }
+      const code = typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code) : ''
+      if (code === 'unavailable' || code === 'failed-precondition' || code === 'deadline-exceeded') {
+        return fail('not_online', 'Connect to the internet to give the bill a number')
+      }
+      // The rules check the date against the cloud's clock; a phone set to the wrong day is refused.
+      return fail('not_saved', code || 'refused')
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Saves left over from the last time the app was open
   // ---------------------------------------------------------------------------
 
@@ -450,6 +535,7 @@ export function startCloud(options: CloudOptions): CloudStore {
     ready,
     getState: () => state,
     dispatch,
+    issueBill,
     stop() {
       stopped = true
       stops.forEach((stop) => stop())

@@ -94,6 +94,9 @@ function describe(prev: AppState, next: AppState, entries: LedgerEntry[], events
 /** The writes that turn `prev` into `next`, or nothing when only screen-side state (who is acting) changed. */
 export function changesBetween(prev: AppState, next: AppState): Result<Change | undefined> {
   const actor = next.actorId
+  if (prev.bills !== next.bills || prev.billCounters !== next.billCounters) {
+    return fail('invalid_input', 'Bills are numbered online through issueBill, not saved with other changes')
+  }
   const first: DocWrite[][] = []
   const records: DocWrite[][] = []
 

@@ -16,6 +16,7 @@ import {
   addTripEvent,
   closeMonthForAll,
   finishTrip,
+  issueBillCommand,
   recordPayment,
   recordSale,
   reverseLedgerEntry,
@@ -23,7 +24,7 @@ import {
   shopSale,
   startTrip,
 } from '../commands'
-import { balanceOf, openTripsToday, receivedOn, totalToCollect, tripProfitOf, visibleTrips } from '../selectors'
+import { balanceOf, billsOf, openTripsToday, receivedOn, totalToCollect, tripProfitOf, visibleTrips } from '../selectors'
 import { seedDemoState, type AppState } from '../state'
 import type { Next } from '../store'
 
@@ -130,6 +131,24 @@ describe('Demo store', () => {
     expect(balanceOf(s, 'c7')).toBe(1_500_00)
     const again = run(s, addCustomer({ id: 'c8', shopName: 'Udupi 2', phone: '98765 43210', date: TODAY }))
     expect(again.value.duplicateOf?.id).toBe('c7')
+  })
+
+  it('ST-06 bills are numbered per financial year; a retry keeps the number; the content is frozen', () => {
+    let s = seedDemoState()
+    const october = { customerId: 'c1', from: '2026-10-01', to: '2026-10-31', date: TODAY }
+    const first = run(s, issueBillCommand({ ...october, id: 'bill-1' }))
+    s = first.state
+    expect(first.value.number).toBe('ICC/2026-27/0001')
+    expect(first.value.bill.currentBalance).toBe(10_778_00)
+    expect(run(s, issueBillCommand({ ...october, id: 'bill-1' })).value.number).toBe('ICC/2026-27/0001')
+    s = run(s, issueBillCommand({ ...october, id: 'bill-2', customerId: 'c2', from: '2026-11-01', to: TODAY })).state
+    expect(billsOf(s, 'c2')[0]?.number).toBe('ICC/2026-27/0002')
+    expect(run(s, issueBillCommand({ ...october, id: 'bill-3', date: '2027-04-01' })).value.number).toBe('ICC/2027-28/0001')
+    // A later payment does not change a bill already issued.
+    s = run(s, recordPayment({ id: 'pay-x', customerId: 'c1', date: TODAY, amount: rupees('1000'), method: 'CASH' })).state
+    expect(billsOf(s, 'c1')[0]?.bill.currentBalance).toBe(10_778_00)
+    expect(code(run(s, setActor('u-driver')).state, issueBillCommand({ ...october, id: 'bill-4' }))).toBe(undefined)
+    expect(code(s, issueBillCommand({ ...october, id: 'bill-5', customerId: 'c-missing' }))).toBe('invalid_input')
   })
 })
 

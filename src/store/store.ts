@@ -4,7 +4,8 @@
  *  - Signed in (P5): the cloud store (cloud.ts) attaches itself; the same commands then save to Firestore.
  */
 import { useSyncExternalStore } from 'react'
-import { ok, type Result } from '../domain'
+import { ok, type IssuedBill, type Result } from '../domain'
+import { issueBillCommand, type IssueBillInput } from './commands'
 import { seedDemoState, type AppState } from './state'
 
 const STORAGE_KEY = 'icc.demo.v1'
@@ -14,7 +15,8 @@ function load(): AppState | null {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as AppState
-    return parsed?.version === 1 ? parsed : null
+    // Demo data saved before bills existed (P6) has no bills yet.
+    return parsed?.version === 1 ? { ...parsed, bills: parsed.bills ?? [] } : null
   } catch {
     return null
   }
@@ -39,6 +41,8 @@ export type Command<T> = (s: AppState) => Result<Next<T>>
 export interface Backend {
   getState(): AppState
   dispatch<T>(command: Command<T>): Result<T>
+  /** Gives the bill its number and stores it (the cloud does this online, in a transaction). */
+  issueBill(input: IssueBillInput): Promise<Result<IssuedBill>>
 }
 
 let demo: AppState | undefined
@@ -82,6 +86,11 @@ export function dispatch<T>(command: Command<T>): Result<T> {
   save(demo)
   storeChanged()
   return ok(result.value.value)
+}
+
+/** Issues a bill: the next visible number for the financial year, and its content frozen as issued (P6). */
+export function issueBill(input: IssueBillInput): Promise<Result<IssuedBill>> {
+  return backend ? backend.issueBill(input) : Promise.resolve(dispatch(issueBillCommand(input)))
 }
 
 export function resetDemo(): void {

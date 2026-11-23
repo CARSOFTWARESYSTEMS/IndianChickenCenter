@@ -2,7 +2,7 @@
 
 How to connect the app to a Firebase project, add the first owner, and try sign-in on this computer with the Firebase emulators. Without Firebase settings the app runs on demo data only, as in the P3 prototype.
 
-Status (P5): signed in, everything is saved in Firestore: sign-in, roles, People, the owner's set-up, customers, trips and the ledger. Entries are saved on the phone first and sent when there is internet. Hosting deploy is P9.
+Status (P6): signed in, everything is saved in Firestore: sign-in, roles, People, the owner's set-up, customers, trips, the ledger and issued bills. Entries are saved on the phone first and sent when there is internet; bill numbers need the internet. Hosting deploy is P9.
 
 ## 1. Create the Firebase project (once)
 

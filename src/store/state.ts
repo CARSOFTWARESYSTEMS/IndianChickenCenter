@@ -24,6 +24,7 @@ import {
   rupees,
   type BusinessSettings,
   type Customer,
+  type IssuedBill,
   type LedgerEntry,
   type LedgerWindow,
   type Result,
@@ -51,6 +52,10 @@ export interface AppState {
   ledger: LedgerEntry[]
   /** Cloud only: the ledger holds entries from this date on plus month-end snapshots (P5). Demo data is complete. */
   ledgerWindow?: LedgerWindow
+  /** Issued bills (P6). In the cloud, those issued inside the read window. */
+  bills: IssuedBill[]
+  /** Demo only: the last bill number given out per financial year. In the cloud a counter document does this. */
+  billCounters?: Record<string, number>
 }
 
 export const DEMO_USERS: AppUser[] = [
@@ -142,5 +147,6 @@ export function seedDemoState(): AppState {
     trips: [trip],
     tripEvents: events,
     ledger,
+    bills: [],
   }
 }

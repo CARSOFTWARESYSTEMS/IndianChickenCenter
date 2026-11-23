@@ -44,6 +44,10 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - `src/pages/` — today, trips (+ tripSheets), customers, bill, ledger, more (profile, settings, help), people (owner),
   auth (sign-in, not on the team, owner set-up), design gallery, engine check.
   Sheets are rendered only while open, so each opening gets fresh ids (plan §5).
+- `src/domain/billDocument.ts` — IssuedBill (number per financial year, content frozen), billDocument (the rows the
+  screen and PDF both show), paginate. `src/pdf/billPdf.ts` (lazy) draws pages on a canvas (browser fonts handle
+  Kannada and ₹) and puts them in an A4 PDF with pdf-lib; shareOrDownload uses Web Share with files, else downloads.
+  Bills are issued through `issueBill()` in store.ts: demo counter, or a Firestore transaction on `billCounters/{FY}`.
 - `src/data/docs.ts` — how engine records are stored in Firestore (paths, document shapes, `DocWrite` batches). Pure TS.
   `src/data/diff.ts` — the writes a command made (new trips first and alone; at most 4 records per batch for the rules' look-up limit).
   Purchase rates live in `trips/{id}/purchases`, money totals in `trips/{id}/totals/close` (drivers cannot read them).
@@ -85,4 +89,7 @@ P5 persistence + offline built (branch p5-persistence): signed in, customers, tr
 behind the same commands; entries save on the phone first; sync badge and Needs attention; balances from month-end
 snapshots over a read window (D-27). Tests: 108 unit (adds LW-* and DIFF-*) and 37 emulator (28 rule tests up to R-16,
 9 sync tests SY-01–SY-09); the test map is in docs/FINANCIAL_CALCULATIONS.md.
-Next: Gate B with the owner (README "Trying the prototype"), then P6 bills (PDF, numbering).
+P6 bills built (branch p6-bills): statement → "Issue bill" (ICC/2026-27/0001, online transaction, frozen content),
+issued bills on the customer, Share PDF / WhatsApp text / Print, English and Kannada. Tests: 115 unit (adds BD-*,
+ST-06, PDF-01) and 42 emulator (adds BR-01–04 and SY-10).
+Next: Gate B with the owner (README "Trying the prototype"), then P7 Google Drive backup and restore.

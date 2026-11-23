@@ -85,7 +85,16 @@ export const SEED_SALE = {
 }
 
 export async function seed(env: RulesTestEnvironment): Promise<void> {
-  await env.clearFirestore()
+  // The emulator sometimes answers a clear with a 500 while an earlier client's streams wind down; try again.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await env.clearFirestore()
+      break
+    } catch (err) {
+      if (attempt >= 5) throw err
+      await new Promise((r) => setTimeout(r, 200))
+    }
+  }
   await env.withSecurityRulesDisabled(async (ctx) => {
     await commit(ctx, [
       set('users/owner', user('Umarabba', EMAIL.owner, 'owner')),

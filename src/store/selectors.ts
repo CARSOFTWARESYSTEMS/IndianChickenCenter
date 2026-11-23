@@ -9,6 +9,7 @@ import {
   type Capability,
   type Customer,
   type IsoDate,
+  type IssuedBill,
   type Paise,
   type PassbookRow,
   type ProfitReport,
@@ -107,4 +108,15 @@ export function receivedOn(s: AppState, date: IsoDate): Paise {
 
 export function userName(s: AppState, id: string | undefined): string | undefined {
   return id ? s.users.find((u) => u.id === id)?.name : undefined
+}
+
+/** A customer's issued bills, newest first. */
+export function billsOf(s: AppState, customerId: string): IssuedBill[] {
+  return s.bills
+    .filter((b) => b.customerId === customerId)
+    .sort((a, b) => (a.issuedOn === b.issuedOn ? b.sequence - a.sequence : a.issuedOn < b.issuedOn ? 1 : -1))
+}
+
+export function billById(s: AppState, id: string | undefined): IssuedBill | undefined {
+  return id ? s.bills.find((b) => b.id === id) : undefined
 }

@@ -6,7 +6,7 @@ import { AuthGate } from './app/AuthGate'
 import { PreferencesProvider } from './app/preferences'
 import { ToastProvider } from './app/toast'
 import { SessionProvider } from './firebase/session'
-import { BillPage } from './pages/bill'
+import { BillPage, IssuedBillPage } from './pages/bill'
 import { CustomerDetailPage, CustomersPage } from './pages/customers'
 import { DesignSystemPage } from './pages/DesignSystemPage'
 import { EngineCheckPage } from './pages/EngineCheckPage'
@@ -41,6 +41,7 @@ createRoot(root).render(
                 <Route path="customers" element={<CustomersPage />} />
                 <Route path="customers/:customerId" element={<CustomerDetailPage />} />
                 <Route path="customers/:customerId/bill" element={<BillPage />} />
+                <Route path="customers/:customerId/bills/:billId" element={<IssuedBillPage />} />
                 <Route path="ledger" element={<LedgerPage />} />
                 <Route path="more" element={<MorePage />} />
                 <Route path="more/profile" element={<BusinessProfilePage />} />

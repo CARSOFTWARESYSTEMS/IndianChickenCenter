@@ -5,12 +5,12 @@
 import { assertSucceeds, type RulesTestEnvironment } from '@firebase/rules-unit-testing'
 import { disableNetwork, enableNetwork } from 'firebase/firestore'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { kg, makeLoading, makeSale, ratePerKg, type Result } from '../../src/domain'
+import { financialYearOf, firstDayOfMonth, kg, makeLoading, makeSale, monthOf, ratePerKg, todayInKolkata, type Result } from '../../src/domain'
 import { commitWrites } from '../../src/firebase/client'
 import { ledgerEntryWrites } from '../../src/data/docs'
 import { addTripEvent, closeMonthForAll, finishTrip, recordSale } from '../../src/store/commands'
 import { balanceOf, tripById, tripSummaryOf } from '../../src/store/selectors'
-import { dispatch, getState } from '../../src/store/store'
+import { dispatch, getState, issueBill } from '../../src/store/store'
 import { attentionItems, getSync, pendingCount } from '../../src/store/sync'
 import { startEnv } from '../rules/helpers'
 import { closeDevices, device, phone, seedCloud, TODAY, TRIP, until } from './helpers'
@@ -177,5 +177,23 @@ describe('the cloud store', () => {
       ['sync-2', 'saved'],
     ])
     expect(JSON.parse(storage.get('icc.sync.v1') ?? '[]')).toHaveLength(1)
+  })
+
+  it('SY-10 bills take the next number online, once per id; offline there is no number', async () => {
+    let connected = true
+    const { db } = await phone('owner', 'owner', { online: () => connected })
+    const today = todayInKolkata()
+    const year = financialYearOf(today)
+    const input = (id: string) => ({ id, customerId: 'c1', from: firstDayOfMonth(monthOf(today)), to: today, date: today })
+    const first = must(await issueBill(input('bill-a')))
+    expect(first.number).toBe(`ICC/${year}/0001`)
+    expect(must(await issueBill(input('bill-a'))).number).toBe(`ICC/${year}/0001`)
+    expect(must(await issueBill(input('bill-b'))).number).toBe(`ICC/${year}/0002`)
+    expect((await serverDoc(`billCounters/${year}`))?.next).toBe(3)
+    await until(() => getState().bills.length === 2)
+    connected = false
+    await disableNetwork(db)
+    const offline = await issueBill(input('bill-c'))
+    expect(!offline.ok && offline.error.code).toBe('not_online')
   })
 })

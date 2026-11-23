@@ -19,8 +19,9 @@ import {
 } from '../domain'
 import { addCustomer, editCustomer, recordPayment, reverseLedgerEntry } from '../store/commands'
 import { newId } from '../store/ids'
-import { allowed, balanceOf, customerById, customersWithBalance, openTripsToday, passbookOf, reversedIds } from '../store/selectors'
+import { allowed, balanceOf, billsOf, customerById, customersWithBalance, openTripsToday, passbookOf, reversedIds } from '../store/selectors'
 import { dispatch, useAppState } from '../store/store'
+import { billLine } from './bill'
 import { isPending, useSync } from '../store/sync'
 import { Button, ButtonLink } from '../ui/Button'
 import { Field, Segmented } from '../ui/controls'
@@ -257,6 +258,7 @@ export function CustomerDetailPage() {
 
   const balance = balanceOf(s, customer.id)
   const rows = passbookOf(s, customer.id)
+  const bills = billsOf(s, customer.id)
   const byId = new Map(s.ledger.map((e) => [e.id, e]))
   const reversed = reversedIds(s)
   const saleTrips = openTripsToday(s, today)
@@ -299,6 +301,23 @@ export function CustomerDetailPage() {
         </div>
         {saleTrips.length === 0 && <p className="mt-2 text-caption text-ink-2">{t.customers.saleNeedsTrip}</p>}
       </Card>
+
+      {bills.length > 0 && (
+        <Section header={t.bill.bills}>
+          {bills.map((b) => {
+            const line = billLine(b)
+            return (
+              <Row
+                key={b.id}
+                to={`/customers/${customer.id}/bills/${b.id}`}
+                title={line.title}
+                subtitle={line.subtitle}
+                value={<Amount paise={line.amount} tone={balanceTone(line.amount)} />}
+              />
+            )
+          })}
+        </Section>
+      )}
 
       <Section header={t.customers.entries}>
         {rows.length === 0 && <p className="px-4 py-3 text-sub text-ink-2">{t.customers.noEntries}</p>}
