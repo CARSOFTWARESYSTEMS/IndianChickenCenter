@@ -1,0 +1,42 @@
+{
+  "name": "indian-chicken-center",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:emulators": "vite --mode emulators --host 127.0.0.1",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:emulator": "sh scripts/firebase.sh emulators:exec --only firestore --project demo-icc 'vitest run -c vitest.emulator.config.ts'",
+    "test:rules": "sh scripts/firebase.sh emulators:exec --only firestore --project demo-icc 'vitest run -c vitest.emulator.config.ts tests/rules'",
+    "rules:generate": "WRITE_RULES=1 vitest run src/data/__tests__/rules-constants.test.ts",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "emulators": "sh scripts/firebase.sh emulators:start --only auth,firestore --project demo-icc --import .emulator-data --export-on-exit",
+    "deploy:rules": "sh scripts/firebase.sh deploy --only firestore:rules,firestore:indexes"
+  },
+  "dependencies": {
+    "firebase": "^13.2.0",
+    "pdf-lib": "^1.17.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^8.5.2"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vite-pwa/assets-generator": "^2.0.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "firebase-tools": "^15.35.0",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.1.1",
+    "workbox-window": "^7.4.1"
+  }
+}

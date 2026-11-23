@@ -1,0 +1,656 @@
+rules_version = '2';
+
+// Indian Chicken Center: Firestore security rules (P4).
+//
+// These rules repeat the money engine (src/domain) on the server:
+//  - who may do what: the role table is generated from permissions.ts (npm run rules:generate)
+//  - posted entries and trip events are append-only; corrections are new REVERSAL or ADJUSTMENT entries
+//  - every amount is re-checked in integer units: grams × paise/kg, under the entry's rounding policy
+//  - "one only" records use fixed ids (open_, rev_, snap_, trip_<date>_<vehicle>), so a second one is an
+//    overwrite, and overwrites are refused
+// Stored shapes: src/data/docs.ts. Tests: tests/rules (npm run test:rules).
+//
+// Rules cannot add up documents, so stock left on a vehicle and customer balances are checked by the app and at
+// trip close, not here (docs/KNOWN_LIMITATIONS.md).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------
+    // Who is calling
+    // ------------------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function uid() {
+      return request.auth.uid;
+    }
+    function tokenEmail() {
+      return request.auth.token.email.lower();
+    }
+    function userPath(id) {
+      return /databases/$(database)/documents/users/$(id);
+    }
+    // Only people with a users/{uid} record may use the app (S-02).
+    function authorised() {
+      return signedIn() && exists(userPath(uid()));
+    }
+    function role() {
+      return get(userPath(uid())).data.role;
+    }
+    function can(capability) {
+      return authorised() && capability in roleCapabilities()[role()];
+    }
+
+    // BEGIN GENERATED from src/domain by `npm run rules:generate`. Do not edit by hand.
+    function roleCapabilities() {
+      return {
+        'owner': ['settings.edit', 'users.manage', 'customer.manage', 'trip.open', 'trip.close', 'trip.viewAll', 'trip.setDefaultRate', 'trip.record', 'purchase.record', 'purchase.view', 'profit.view', 'sale.record', 'sale.changeRate', 'payment.record', 'entry.reverse', 'ledger.adjust', 'month.close', 'customer.viewBalance', 'bill.send'],
+        'manager': ['customer.manage', 'trip.open', 'trip.close', 'trip.viewAll', 'trip.setDefaultRate', 'trip.record', 'purchase.record', 'purchase.view', 'profit.view', 'sale.record', 'sale.changeRate', 'payment.record', 'entry.reverse', 'customer.viewBalance', 'bill.send'],
+        'driver': ['trip.record', 'sale.record', 'payment.record', 'customer.viewBalance', 'bill.send']
+      };
+    }
+    function tripEventCapability() {
+      return {
+        'FUEL': 'trip.record',
+        'LOADING': 'purchase.record',
+        'ORDER': 'trip.record',
+        'EXPENSE': 'trip.record',
+        'WASTAGE': 'trip.record',
+        'DEFAULT_RATE': 'trip.setDefaultRate',
+        'SHOP_SALE': 'sale.record',
+        'REVERSAL': 'entry.reverse'
+      };
+    }
+    function ledgerEntryCapability() {
+      return {
+        'OPENING_BALANCE': 'customer.manage',
+        'SALE': 'sale.record',
+        'PAYMENT': 'payment.record',
+        'REVERSAL': 'entry.reverse',
+        'ADJUSTMENT': 'ledger.adjust',
+        'MONTH_END_SNAPSHOT': 'month.close'
+      };
+    }
+    function roundingPolicies() {
+      return ['TRUNCATE_RUPEE', 'ROUND_HALF_UP_RUPEE', 'EXACT_PAISE'];
+    }
+    function paymentMethods() {
+      return ['CASH', 'UPI', 'BANK_TRANSFER'];
+    }
+    function expenseCategories() {
+      return ['LABOUR', 'MAINTENANCE', 'FOOD', 'OTHER'];
+    }
+    function labourSlots() {
+      return ['DRIVER', 'LABOUR_1', 'LABOUR_2', 'LABOUR_3', 'LABOUR_4', 'LABOUR_5'];
+    }
+    // END GENERATED
+
+    // ------------------------------------------------------------------
+    // Paths
+    // ------------------------------------------------------------------
+
+    function invitePath(email) {
+      return /databases/$(database)/documents/invites/$(email);
+    }
+    function customerPath(id) {
+      return /databases/$(database)/documents/customers/$(id);
+    }
+    function tripPath(tripId) {
+      return /databases/$(database)/documents/trips/$(tripId);
+    }
+    function eventPath(tripId, id) {
+      return /databases/$(database)/documents/trips/$(tripId)/events/$(id);
+    }
+    function purchasePath(tripId, id) {
+      return /databases/$(database)/documents/trips/$(tripId)/purchases/$(id);
+    }
+    function totalsPath(tripId) {
+      return /databases/$(database)/documents/trips/$(tripId)/totals/close;
+    }
+    function entryPath(id) {
+      return /databases/$(database)/documents/ledgerEntries/$(id);
+    }
+    function closurePath(customerId) {
+      return /databases/$(database)/documents/ledgerClosures/$(customerId);
+    }
+
+    // ------------------------------------------------------------------
+    // Values
+    // ------------------------------------------------------------------
+
+    function isId(v) {
+      return v is string && v.size() > 0 && v.size() <= 128;
+    }
+    function isText(v, max) {
+      return v is string && v.size() <= max;
+    }
+    function isName(v, max) {
+      return v is string && v.trim().size() > 0 && v.size() <= max;
+    }
+    function isDate(v) {
+      return v is string && v.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$');
+    }
+    function isMonth(v) {
+      return v is string && v.matches('^[0-9]{4}-(0[1-9]|1[0-2])$');
+    }
+    function monthOf(date) {
+      return date.split('-')[0] + '-' + date.split('-')[1];
+    }
+    function isVehicle(v) {
+      return v is string
+        && (v.matches('^[A-Z]{2}[0-9]{1,2}[A-Z]{0,3}[0-9]{1,4}$') || v.matches('^[0-9]{2}BH[0-9]{4}[A-Z]{1,2}$'));
+    }
+    function isPhone(v) {
+      return v is string && v.matches('^91[6-9][0-9]{9}$');
+    }
+
+    // Integer units with upper bounds, so every product stays below 2^53 and the app reads back exactly
+    // what was checked here: up to 100 tonnes, ₹1,00,000 per kg or litre, ₹10 crore, 1,00,000 litres.
+    function isGrams(v) {
+      return v is int && v > 0 && v <= 100000000;
+    }
+    function isGramsOrZero(v) {
+      return v is int && v >= 0 && v <= 100000000;
+    }
+    function isRate(v) {
+      return v is int && v > 0 && v <= 10000000;
+    }
+    function isPaise(v) {
+      return v is int && v > 0 && v <= 10000000000;
+    }
+    function isPaiseOrZero(v) {
+      return v is int && v >= 0 && v <= 10000000000;
+    }
+    function isMillilitres(v) {
+      return v is int && v > 0 && v <= 100000000;
+    }
+
+    // Exact value in milli-paise → paise, half up (engine toExactPaise): amount = floor((exact + 500) / 1000).
+    // Written with multiplication only, so no integer division is involved.
+    function isExactPaise(exact, amount) {
+      return amount * 1000 <= exact + 500 && exact + 500 < amount * 1000 + 1000;
+    }
+    // Posted amount under each rounding policy (engine postAmount).
+    function isPosted(exact, amount, policy) {
+      return policy == 'TRUNCATE_RUPEE'
+          ? amount % 100 == 0 && amount * 1000 <= exact && exact < amount * 1000 + 100000
+        : policy == 'ROUND_HALF_UP_RUPEE'
+          ? amount % 100 == 0 && amount * 1000 <= exact + 50000 && exact + 50000 < amount * 1000 + 100000
+        : policy == 'EXACT_PAISE' && isExactPaise(exact, amount);
+    }
+
+    // ------------------------------------------------------------------
+    // Settings (owner)
+    // ------------------------------------------------------------------
+
+    function validSettings(d) {
+      return d.keys().hasOnly(['businessName', 'businessNameKn', 'shopLocation', 'contact', 'print', 'gst',
+            'roundingPolicy', 'defaultSaleRatePaisePerKg', 'dieselPricePaisePerLitre', 'languages', 'updatedBy'])
+        && isName(d.businessName, 80)
+        && (!('businessNameKn' in d) || isText(d.businessNameKn, 80))
+        && d.shopLocation is map && isName(d.shopLocation.label, 120)
+        && d.contact is map && isName(d.contact.ownerName, 80)
+        && d.contact.phones is list && d.contact.phones.size() <= 5
+        && (!('whatsapp' in d.contact) || isPhone(d.contact.whatsapp))
+        && d.print is map
+        && d.gst is map && d.gst.enabled is bool
+        && (!d.gst.enabled
+            || (d.gst.gstin is string && d.gst.gstin.matches('^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$')))
+        && (d.roundingPolicy == null || d.roundingPolicy in roundingPolicies())
+        && (!('defaultSaleRatePaisePerKg' in d) || isRate(d.defaultSaleRatePaisePerKg))
+        && (!('dieselPricePaisePerLitre' in d) || isRate(d.dieselPricePaisePerLitre))
+        && d.languages is map && d.languages.screen in ['en', 'kn'] && d.languages.bill in ['en', 'kn']
+        && d.updatedBy == uid();
+    }
+
+    match /settings/{docId} {
+      allow get, list: if authorised();
+      allow create, update: if docId == 'business' && can('settings.edit') && validSettings(request.resource.data);
+    }
+
+    // ------------------------------------------------------------------
+    // People: user records and invites
+    // ------------------------------------------------------------------
+
+    // The invited Google account creates its own record with exactly the invited name and role,
+    // and removes the invite in the same write.
+    function claimsInvite(d) {
+      let invite = get(invitePath(tokenEmail())).data;
+      return request.auth.token.email_verified == true
+        && d.keys().hasOnly(['name', 'email', 'role', 'addedBy', 'addedOn'])
+        && d.email == tokenEmail() && d.name == invite.name && d.role == invite.role
+        && d.addedBy == invite.invitedBy && isDate(d.addedOn)
+        && !existsAfter(invitePath(tokenEmail()));
+    }
+
+    match /users/{userId} {
+      allow get: if signedIn() && (userId == uid() || authorised());
+      allow list: if authorised();
+      allow create: if signedIn() && userId == uid() && claimsInvite(request.resource.data);
+      // The owner renames someone else or changes their role. Nobody changes their own role (S-03);
+      // an owner is added only in the Firebase console.
+      allow update: if can('users.manage') && userId != uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'role'])
+        && isName(request.resource.data.name, 80) && request.resource.data.role in ['manager', 'driver'];
+      allow delete: if can('users.manage') && userId != uid();
+    }
+
+    function validInvite(email, d) {
+      return d.keys().hasOnly(['email', 'name', 'role', 'invitedBy', 'invitedOn'])
+        && d.email == email && email == email.lower() && email.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$')
+        && isName(d.name, 80) && d.role in ['manager', 'driver']
+        && d.invitedBy == uid() && isDate(d.invitedOn);
+    }
+
+    match /invites/{email} {
+      allow get: if can('users.manage') || (signedIn() && email == tokenEmail());
+      allow list: if can('users.manage');
+      allow create: if can('users.manage') && validInvite(email, request.resource.data);
+      allow delete: if can('users.manage') || (signedIn() && email == tokenEmail() && existsAfter(userPath(uid())));
+    }
+
+    // ------------------------------------------------------------------
+    // Customers and vehicles
+    // ------------------------------------------------------------------
+
+    // Customer details are not money, so they may be edited; customers are never deleted (the ledger points at them).
+    function validCustomer(id, d) {
+      return d.keys().hasOnly(['id', 'shopName', 'name', 'phone', 'createdAt', 'createdBy'])
+        && d.id == id && isName(d.shopName, 80)
+        && (!('name' in d) || isText(d.name, 80))
+        && (!('phone' in d) || isPhone(d.phone))
+        && isDate(d.createdAt) && isId(d.createdBy);
+    }
+
+    match /customers/{customerId} {
+      allow get, list: if authorised();
+      allow create: if can('customer.manage') && validCustomer(customerId, request.resource.data)
+        && request.resource.data.createdBy == uid();
+      allow update: if can('customer.manage') && validCustomer(customerId, request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    match /vehicles/{number} {
+      allow get, list: if authorised();
+      allow create: if can('trip.open')
+        && request.resource.data.keys().hasOnly(['number', 'addedBy'])
+        && request.resource.data.number == number && isVehicle(number)
+        && request.resource.data.addedBy == uid();
+      allow delete: if can('settings.edit');
+    }
+
+    // ------------------------------------------------------------------
+    // Trips
+    // ------------------------------------------------------------------
+
+    function canSeeTrip(tripId) {
+      return can('trip.viewAll') || (authorised() && get(tripPath(tripId)).data.get('driverId', null) == uid());
+    }
+    // The trip must be open, and a driver writes only on the trip assigned to them (engine checkDriverAssignment).
+    function mayWriteOnTrip(tripId) {
+      let trip = get(tripPath(tripId)).data;
+      return trip.status == 'OPEN' && (role() != 'driver' || trip.get('driverId', null) == uid());
+    }
+    // Drivers sell at the trip's current rate; owner and manager may change it on a sale (D-18).
+    function atTripRate(tripId, rate) {
+      return can('sale.changeRate') || get(tripPath(tripId)).data.ratePaisePerKg == rate;
+    }
+
+    function validNewTrip(tripId, d) {
+      return d.keys().hasOnly(['id', 'date', 'status', 'createdBy', 'vehicleNumber', 'driverId', 'driverName',
+            'defaultSaleRatePaisePerKg', 'ratePaisePerKg'])
+        && d.id == tripId && isDate(d.date) && isVehicle(d.vehicleNumber)
+        && tripId == 'trip_' + d.date + '_' + d.vehicleNumber
+        && d.status == 'OPEN' && d.createdBy == uid()
+        && (!('driverId' in d) || (isId(d.driverId) && exists(userPath(d.driverId))))
+        && (!('driverName' in d) || isText(d.driverName, 80))
+        && isRate(d.defaultSaleRatePaisePerKg) && d.ratePaisePerKg == d.defaultSaleRatePaisePerKg;
+    }
+
+    // A rate change moves the trip's current rate together with its DEFAULT_RATE event.
+    function changesRate(tripId) {
+      let d = request.resource.data;
+      let event = getAfter(eventPath(tripId, d.rateEventId)).data;
+      return can('trip.setDefaultRate') && resource.data.status == 'OPEN'
+        && d.diff(resource.data).affectedKeys().hasOnly(['ratePaisePerKg', 'rateEventId'])
+        && isRate(d.ratePaisePerKg) && isId(d.rateEventId)
+        && !exists(eventPath(tripId, d.rateEventId))
+        && event.type == 'DEFAULT_RATE' && event.ratePaisePerKg == d.ratePaisePerKg;
+    }
+
+    // Closing: every loaded kg sold or recorded as wastage (U-05), money totals saved alongside.
+    // After this the trip and everything on it are read-only (S-09).
+    function closesTrip(tripId) {
+      let d = request.resource.data;
+      let k = d.closeKg;
+      return can('trip.close') && resource.data.status == 'OPEN'
+        && d.diff(resource.data).affectedKeys().hasOnly(['status', 'closedBy', 'closedOn', 'closeKg'])
+        && d.status == 'CLOSED' && d.closedBy == uid() && isDate(d.closedOn)
+        && k is map && k.keys().hasOnly(['loadedGrams', 'soldGrams', 'shopSoldGrams', 'wastageGrams'])
+        && isGramsOrZero(k.loadedGrams) && isGramsOrZero(k.soldGrams)
+        && isGramsOrZero(k.shopSoldGrams) && isGramsOrZero(k.wastageGrams)
+        && k.shopSoldGrams <= k.soldGrams
+        && k.loadedGrams == k.soldGrams + k.wastageGrams
+        && existsAfter(totalsPath(tripId));
+    }
+
+    function eventKeys(d, extra) {
+      return d.keys().hasOnly(['id', 'tripId', 'date', 'createdBy', 'note', 'type'].concat(extra));
+    }
+
+    // By litres: amount = litres × price, to the paisa. By pump amount: the amount wins and litres are derived,
+    // half up to the mL: ml = floor((2000 × amount + price) / (2 × price)).
+    function validFuel(d) {
+      let ml = d.millilitres;
+      let price = d.pricePaisePerLitre;
+      return eventKeys(d, ['fuelType', 'entryMode', 'millilitres', 'pricePaisePerLitre', 'amount'])
+        && d.fuelType == 'DIESEL' && isMillilitres(ml) && isRate(price)
+        && (d.entryMode == 'LITRES'
+          ? isPaiseOrZero(d.amount) && isExactPaise(ml * price, d.amount)
+          : d.entryMode == 'AMOUNT' && isPaise(d.amount)
+            && ml * 2 * price <= 2000 * d.amount + price
+            && 2000 * d.amount + price < (ml + 1) * 2 * price);
+    }
+
+    // Kg only; the purchase rate and amount are saved in the same write under purchases/ (owner and manager only).
+    function validLoading(tripId, eventId, d) {
+      return eventKeys(d, ['grams', 'loadingPoint'])
+        && isGrams(d.grams) && (!('loadingPoint' in d) || isText(d.loadingPoint, 80))
+        && getAfter(purchasePath(tripId, eventId)).data.grams == d.grams;
+    }
+
+    function validOrder(d) {
+      return eventKeys(d, ['customerId', 'grams', 'ratePaisePerKg', 'amount'])
+        && isId(d.customerId) && exists(customerPath(d.customerId))
+        && isGrams(d.grams) && isRate(d.ratePaisePerKg)
+        && isPaiseOrZero(d.amount) && isExactPaise(d.grams * d.ratePaisePerKg, d.amount);
+    }
+
+    // A trip uses either per-person labour lines or one labour total (D-20); the rules cannot see the
+    // trip's other lines, so the app checks that.
+    function validExpense(d) {
+      return eventKeys(d, ['category', 'slot', 'workerName', 'amount'])
+        && d.category in expenseCategories() && isPaiseOrZero(d.amount)
+        && (d.category == 'LABOUR' || (!('slot' in d) && !('workerName' in d)))
+        && (!('slot' in d) || d.slot in labourSlots())
+        && (!('workerName' in d) || isText(d.workerName, 80));
+    }
+
+    function validDefaultRate(tripId, eventId, d) {
+      let after = getAfter(tripPath(tripId)).data;
+      return eventKeys(d, ['ratePaisePerKg']) && isRate(d.ratePaisePerKg)
+        && after.get('rateEventId', null) == eventId && after.ratePaisePerKg == d.ratePaisePerKg;
+    }
+
+    function validShopSale(tripId, d) {
+      return eventKeys(d, ['grams', 'ratePaisePerKg', 'exactMilliPaise', 'amount', 'policyId', 'method', 'oversellConfirmed'])
+        && isGrams(d.grams) && isRate(d.ratePaisePerKg)
+        && d.policyId in roundingPolicies() && d.method in paymentMethods()
+        && d.exactMilliPaise == d.grams * d.ratePaisePerKg
+        && isPaiseOrZero(d.amount) && isPosted(d.exactMilliPaise, d.amount, d.policyId)
+        && (!('oversellConfirmed' in d) || d.oversellConfirmed == true)
+        && atTripRate(tripId, d.ratePaisePerKg);
+    }
+
+    // One reversal per event (fixed id rev_<originalId>); reversals and rate changes cannot be reversed.
+    function validTripReversal(tripId, eventId, d) {
+      return eventKeys(d, ['reversesId', 'reason'])
+        && isId(d.reversesId) && eventId == 'rev_' + d.reversesId
+        && (!('reason' in d) || isText(d.reason, 200))
+        && get(eventPath(tripId, d.reversesId)).data.type in ['FUEL', 'LOADING', 'ORDER', 'EXPENSE', 'WASTAGE', 'SHOP_SALE'];
+    }
+
+    function validEvent(tripId, eventId, d) {
+      return authorised() && d.id == eventId && d.tripId == tripId && d.createdBy == uid() && isDate(d.date)
+        && (!('note' in d) || isText(d.note, 200))
+        && d.type in tripEventCapability() && can(tripEventCapability()[d.type])
+        && mayWriteOnTrip(tripId)
+        && (d.type == 'FUEL' ? validFuel(d)
+          : d.type == 'LOADING' ? validLoading(tripId, eventId, d)
+          : d.type == 'ORDER' ? validOrder(d)
+          : d.type == 'EXPENSE' ? validExpense(d)
+          : d.type == 'WASTAGE' ? eventKeys(d, ['grams']) && isGrams(d.grams)
+          : d.type == 'DEFAULT_RATE' ? validDefaultRate(tripId, eventId, d)
+          : d.type == 'SHOP_SALE' ? validShopSale(tripId, d)
+          : d.type == 'REVERSAL' && validTripReversal(tripId, eventId, d));
+    }
+
+    // The purchase half of a LOADING event: created only together with its event.
+    function validPurchase(tripId, eventId, d) {
+      return can('purchase.record') && mayWriteOnTrip(tripId)
+        && d.keys().hasOnly(['id', 'tripId', 'createdBy', 'grams', 'ratePaisePerKg', 'exactMilliPaise', 'amount'])
+        && d.id == eventId && d.tripId == tripId && d.createdBy == uid()
+        && isGrams(d.grams) && isRate(d.ratePaisePerKg)
+        && d.exactMilliPaise == d.grams * d.ratePaisePerKg
+        && isPaiseOrZero(d.amount) && isExactPaise(d.exactMilliPaise, d.amount)
+        && !exists(eventPath(tripId, eventId))
+        && getAfter(eventPath(tripId, eventId)).data.type == 'LOADING';
+    }
+
+    function validTotals(tripId, d) {
+      return can('trip.close')
+        && d.keys().hasOnly(['tripId', 'purchasePaise', 'salesPaise', 'operatingPaise', 'closedBy'])
+        && d.tripId == tripId && d.closedBy == uid()
+        && isPaiseOrZero(d.purchasePaise) && isPaiseOrZero(d.salesPaise) && isPaiseOrZero(d.operatingPaise)
+        && get(tripPath(tripId)).data.status == 'OPEN'
+        && getAfter(tripPath(tripId)).data.status == 'CLOSED';
+    }
+
+    match /trips/{tripId} {
+      allow get, list: if can('trip.viewAll') || (authorised() && resource.data.get('driverId', null) == uid());
+      allow create: if can('trip.open') && validNewTrip(tripId, request.resource.data);
+      allow update: if changesRate(tripId) || closesTrip(tripId);
+
+      match /events/{eventId} {
+        allow get, list: if canSeeTrip(tripId);
+        allow create: if validEvent(tripId, eventId, request.resource.data);
+      }
+      match /purchases/{eventId} {
+        allow get, list: if can('purchase.view');
+        allow create: if validPurchase(tripId, eventId, request.resource.data);
+      }
+      match /totals/{docId} {
+        allow get, list: if can('profit.view');
+        allow create: if docId == 'close' && validTotals(tripId, request.resource.data);
+      }
+    }
+
+    // Collection-group reads (P5): owner and manager load the recent window of every trip's events, purchases and
+    // totals with one query each. This grants nothing new: they may already read each trip's documents.
+    match /{path=**}/events/{eventId} {
+      allow list: if can('trip.viewAll');
+    }
+    match /{path=**}/purchases/{eventId} {
+      allow list: if can('purchase.view');
+    }
+    match /{path=**}/totals/{docId} {
+      allow list: if can('profit.view');
+    }
+
+    // ------------------------------------------------------------------
+    // Customer ledger
+    // ------------------------------------------------------------------
+
+    function entryKeys(d, extra) {
+      return d.keys().hasOnly(['id', 'customerId', 'date', 'createdBy', 'comment', 'type'].concat(extra));
+    }
+
+    // An entry dated in a month already closed for this customer is refused; date it in the open month.
+    function monthIsOpen(customerId, date) {
+      return !exists(closurePath(customerId)) || monthOf(date) > get(closurePath(customerId)).data.closedThrough;
+    }
+    function notBeforeOpening(d) {
+      return d.type == 'OPENING_BALANCE'
+        || !exists(entryPath('open_' + d.customerId))
+        || d.date >= get(entryPath('open_' + d.customerId)).data.date;
+    }
+    // A driver records sales and payments only on the trip assigned to them; a named trip must be open.
+    function onTrip(d) {
+      return 'tripId' in d ? isId(d.tripId) && mayWriteOnTrip(d.tripId) : role() != 'driver';
+    }
+    function directionOf(e) {
+      return e.type == 'SALE' ? 'DEBIT' : e.type == 'PAYMENT' ? 'CREDIT' : e.direction;
+    }
+
+    function validSale(d) {
+      return entryKeys(d, ['tripId', 'grams', 'ratePaisePerKg', 'exactMilliPaise', 'amount', 'policyId',
+            'differenceMilliPaise', 'oversellConfirmed'])
+        && isGrams(d.grams) && isRate(d.ratePaisePerKg) && d.policyId in roundingPolicies()
+        && d.exactMilliPaise == d.grams * d.ratePaisePerKg
+        && isPaiseOrZero(d.amount) && isPosted(d.exactMilliPaise, d.amount, d.policyId)
+        && d.differenceMilliPaise == d.exactMilliPaise - d.amount * 1000
+        && (!('oversellConfirmed' in d) || d.oversellConfirmed == true)
+        && onTrip(d)
+        && (!('tripId' in d) || atTripRate(d.tripId, d.ratePaisePerKg));
+    }
+
+    function validPayment(d) {
+      return entryKeys(d, ['amount', 'method', 'reference', 'tripId'])
+        && isPaise(d.amount) && d.method in paymentMethods()
+        && (!('reference' in d) || isText(d.reference, 60))
+        && onTrip(d);
+    }
+
+    // Saved in the same write as the new customer, so it is always the customer's first entry.
+    // An opening advance (CREDIT) waits on owner decision U-10.
+    function validOpening(entryId, d) {
+      return entryKeys(d, ['direction', 'amount'])
+        && entryId == 'open_' + d.customerId
+        && d.direction == 'DEBIT' && isPaise(d.amount)
+        && !exists(customerPath(d.customerId));
+    }
+
+    // One reversal per entry (fixed id rev_<originalId>), mirroring the original amount in the other direction.
+    function validReversal(entryId, d) {
+      let original = get(entryPath(d.reversesId)).data;
+      return entryKeys(d, ['reversesId', 'direction', 'amount', 'reason'])
+        && isId(d.reversesId) && entryId == 'rev_' + d.reversesId
+        && original.type in ['OPENING_BALANCE', 'SALE', 'PAYMENT', 'ADJUSTMENT']
+        && original.customerId == d.customerId
+        && d.amount == original.amount
+        && d.direction == (directionOf(original) == 'DEBIT' ? 'CREDIT' : 'DEBIT')
+        && (!('reason' in d) || isText(d.reason, 200))
+        && (!('tripId' in original) || mayWriteOnTrip(original.tripId));
+    }
+
+    function validAdjustment(d) {
+      return entryKeys(d, ['direction', 'amount', 'reason'])
+        && d.direction in ['DEBIT', 'CREDIT'] && isPaise(d.amount) && isName(d.reason, 200);
+    }
+
+    // A checkpoint, never summed. Saved together with the customer's closed month.
+    function validSnapshot(entryId, d) {
+      return entryKeys(d, ['month', 'closingBalance', 'entryCount'])
+        && isMonth(d.month) && entryId == 'snap_' + d.customerId + '_' + d.month
+        && d.month < monthOf(d.date)
+        && d.closingBalance is int && d.closingBalance >= -10000000000 && d.closingBalance <= 10000000000
+        && d.entryCount is int && d.entryCount >= 0
+        && getAfter(closurePath(d.customerId)).data.closedThrough == d.month;
+    }
+
+    function validEntry(entryId, d) {
+      return authorised() && d.id == entryId && isId(d.customerId) && existsAfter(customerPath(d.customerId))
+        && d.createdBy == uid() && isDate(d.date) && (!('comment' in d) || isText(d.comment, 200))
+        && d.type in ledgerEntryCapability() && can(ledgerEntryCapability()[d.type])
+        && (d.type == 'MONTH_END_SNAPSHOT' || (monthIsOpen(d.customerId, d.date) && notBeforeOpening(d)))
+        && (d.type == 'SALE' ? validSale(d)
+          : d.type == 'PAYMENT' ? validPayment(d)
+          : d.type == 'OPENING_BALANCE' ? validOpening(entryId, d)
+          : d.type == 'REVERSAL' ? validReversal(entryId, d)
+          : d.type == 'ADJUSTMENT' ? validAdjustment(d)
+          : d.type == 'MONTH_END_SNAPSHOT' && validSnapshot(entryId, d));
+    }
+
+    // No update or delete rule: posted entries are never edited (S-04).
+    match /ledgerEntries/{entryId} {
+      allow get, list: if can('customer.viewBalance');
+      allow create: if validEntry(entryId, request.resource.data);
+    }
+
+    // The last month closed for a customer. It only moves forward, and only with that month's snapshot.
+    match /ledgerClosures/{customerId} {
+      allow get, list: if authorised();
+      allow create, update: if can('month.close')
+        && request.resource.data.keys().hasOnly(['customerId', 'closedThrough', 'closedBy'])
+        && request.resource.data.customerId == customerId
+        && isMonth(request.resource.data.closedThrough)
+        && request.resource.data.closedBy == uid()
+        && (resource == null || request.resource.data.closedThrough > resource.data.closedThrough)
+        && !exists(entryPath('snap_' + customerId + '_' + request.resource.data.closedThrough))
+        && existsAfter(entryPath('snap_' + customerId + '_' + request.resource.data.closedThrough));
+    }
+
+    // ------------------------------------------------------------------
+    // Bills (P6): numbered per financial year from a counter, issued online in a transaction, never changed
+    // ------------------------------------------------------------------
+
+    function pad2(n) {
+      return n < 10 ? '0' + string(n) : string(n);
+    }
+    function pad4(n) {
+      return n < 10 ? '000' + string(n) : n < 100 ? '00' + string(n) : n < 1000 ? '0' + string(n) : string(n);
+    }
+    function billPath(id) {
+      return /databases/$(database)/documents/bills/$(id);
+    }
+    function counterPath(year) {
+      return /databases/$(database)/documents/billCounters/$(year);
+    }
+    // Today in Asia/Kolkata, by the cloud's clock: bills are dated the day they are issued.
+    function todayInKolkata() {
+      let t = request.time + duration.value(330, 'm');
+      return string(t.year()) + '-' + pad2(t.month()) + '-' + pad2(t.day());
+    }
+    // "2026-11-22" → "2026-27" (April to March).
+    function financialYearOf(date) {
+      let y = int(date.split('-')[0]);
+      let start = int(date.split('-')[1]) >= 4 ? y : y - 1;
+      return string(start) + '-' + pad2((start + 1) % 100);
+    }
+
+    // The bill takes the number the counter gave out in the same write, so numbers have no gaps and no repeats.
+    // Rules cannot add up ledger entries; they check that the bill's own totals add up.
+    function validBill(billId, d) {
+      let b = d.bill;
+      let counter = getAfter(counterPath(d.financialYear)).data;
+      return can('bill.send')
+        && d.keys().hasOnly(['id', 'number', 'financialYear', 'sequence', 'customerId', 'issuedOn', 'issuedBy', 'bill'])
+        && d.id == billId && d.issuedBy == uid()
+        && isDate(d.issuedOn) && d.issuedOn == todayInKolkata()
+        && d.financialYear == financialYearOf(d.issuedOn)
+        && d.sequence is int && d.sequence >= 1
+        && d.number == 'ICC/' + d.financialYear + '/' + pad4(d.sequence)
+        && isId(d.customerId) && exists(customerPath(d.customerId))
+        && counter.lastBillId == billId && counter.next == d.sequence + 1
+        && b is map && b.customerId == d.customerId
+        && isDate(b.from) && isDate(b.to) && b.from <= b.to && b.to <= d.issuedOn
+        && b.previousBalance is int && b.itemsGrams is int && b.itemsAmount is int
+        && b.paid is int && b.otherNet is int && b.currentBalance is int
+        && b.currentBalance == b.previousBalance + b.itemsAmount - b.paid + b.otherNet
+        && b.items is list && b.payments is list && b.other is list
+        && b.items.size() + b.payments.size() + b.other.size() <= 1000;
+    }
+
+    match /bills/{billId} {
+      allow get, list: if can('customer.viewBalance');
+      allow create: if validBill(billId, request.resource.data);
+    }
+
+    // The next number to give out in a financial year. It moves by exactly one, only with the bill that takes it.
+    match /billCounters/{year} {
+      allow get: if can('bill.send');
+      allow create, update: if can('bill.send')
+        && request.resource.data.keys().hasOnly(['financialYear', 'next', 'lastBillId'])
+        && request.resource.data.financialYear == year
+        && request.resource.data.next == (resource == null ? 2 : resource.data.next + 1)
+        && isId(request.resource.data.lastBillId)
+        && !exists(billPath(request.resource.data.lastBillId))
+        && getAfter(billPath(request.resource.data.lastBillId)).data.sequence == request.resource.data.next - 1;
+    }
+
+    // Everything else (backups in P7) is refused until it gets its own rules.
+  }
+}
