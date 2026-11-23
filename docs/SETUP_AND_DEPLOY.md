@@ -83,6 +83,7 @@ The emulators run Firebase Auth and Firestore on this computer with a fake Googl
 
 - Emulator data is kept in `.emulator-data/` (not committed): saved when the emulators stop, loaded when they start. Delete the folder to start empty. After a restart you may need to sign in again. The Emulator UI is at http://127.0.0.1:4000.
 - To see "Saved on phone" and "Syncing", stop the emulators while the app is open, save something, then start them again.
+- To try the production build (service worker, offline start) against the emulators: `npm run build:emulators`, then `npm run preview:emulators -- --port 4174` and open http://127.0.0.1:4174 ("preview-emulators" in `.claude/launch.json`). The iPhone and iPad simulators on a Mac reach it at the same address.
 
 ## 6. Checks
 
@@ -137,6 +138,10 @@ npm run restore -- backup.json --emulator --database restore-check --apply
 
 `restore-check` is an empty second database in the emulator, so this is the "dry-run restore into a blank emulator" of test B-04.
 
-## 8. Deploy the app (P9)
+## 8. Device checks (P8)
+
+The real-device checks (DV-01 to DV-08) and their results are in `docs/TEST_REPORT.md`. Google sign-in on phones needs the app on its real address with the matching auth domain, so run them after deploying (§9), or on a Firebase Hosting preview channel whose address is added to Authentication → Settings → Authorised domains.
+
+## 9. Deploy the app (P9)
 
 Firebase Hosting serves `dist/` with a rewrite to `index.html` (`firebase.json`). The full production checklist (auth domain, smoke test) is part of P9.

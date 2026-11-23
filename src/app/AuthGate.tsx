@@ -4,6 +4,7 @@
  */
 import { useEffect, type ReactNode } from 'react'
 import { firebaseSettings } from '../firebase/config'
+import { keepStorage } from './device'
 import { useSession } from '../firebase/session'
 import { ActivationPage, LoadingScreen, NotAuthorisedPage, SignInPage, WaitingForOwnerPage } from '../pages/auth'
 import { useSync } from '../store/sync'
@@ -13,6 +14,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const sync = useSync()
   const uid = session.status === 'ready' ? session.account.uid : undefined
   const role = session.status === 'ready' ? session.user.role : undefined
+
+  // DV-06: entries wait on the phone until the cloud has them, so ask the browser once to keep this app's data.
+  const usable = session.status === 'ready' || session.status === 'demo'
+  useEffect(() => {
+    if (usable) void keepStorage()
+  }, [usable])
 
   useEffect(() => {
     if (!uid || !role || !services) return

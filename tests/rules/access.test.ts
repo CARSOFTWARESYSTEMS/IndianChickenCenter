@@ -176,6 +176,18 @@ describe('settings and customers', () => {
     await assertFails(as(env, 'owner').firestore().doc('settings/other').set({ businessName: 'X' }))
   })
 
+  it('R-17 the shop map pin is saved with both numbers in range, or not at all (DV-07)', async () => {
+    const pin = (shopLocation: Record<string, unknown>) =>
+      commit(as(env, 'owner'), settingsWrites({ ...DEFAULT_SETTINGS, shopLocation: shopLocation as never }, 'owner'))
+    await assertSucceeds(pin({ label: 'Ujire', latitude: 12.9963, longitude: 75.3086 }))
+    await assertSucceeds(pin({ label: 'Ujire', latitude: 13, longitude: 75 }))
+    await assertSucceeds(pin({ label: 'Ujire' }))
+    await assertFails(pin({ label: 'Ujire', latitude: 12.9963 }))
+    await assertFails(pin({ label: 'Ujire', latitude: '12.9963', longitude: '75.3086' }))
+    await assertFails(pin({ label: 'Ujire', latitude: 95, longitude: 75.3086 }))
+    await assertFails(pin({ label: 'Ujire', latitude: 12.9963, longitude: 75.3086, accuracy: 20 }))
+  })
+
   it('R-13 owner and manager add and edit customers; customers are never deleted', async () => {
     const customer = { id: 'c3', shopName: 'New Shop', phone: '919812345678', createdAt: TODAY, createdBy: 'manager' }
     await assertFails(commit(as(env, 'driver'), newCustomerWrites({ ...customer, createdBy: 'driver' })))

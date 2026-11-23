@@ -2,7 +2,8 @@
  * Five sections (plan addendum I): Today · Trip · Customers · Ledger · More.
  * Phone: bottom tabs. Tablet (≥768 px): sidebar. Desktop (≥1024 px): wider sidebar with keyboard shortcuts.
  */
-import { NavLink, Outlet } from 'react-router'
+import { useEffect } from 'react'
+import { NavLink, Outlet, useLocation, useNavigationType } from 'react-router'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { StatusBadge } from './SyncBadge'
 import { useAppState } from '../store/store'
@@ -150,9 +151,19 @@ function UpdatePrompt() {
   )
 }
 
+/** A new screen opens at its top (seen on iPhone: Business profile opened half-way down). Going back keeps the place. */
+function useNewScreenAtTop() {
+  const { pathname } = useLocation()
+  const navigation = useNavigationType()
+  useEffect(() => {
+    if (navigation !== 'POP') window.scrollTo(0, 0)
+  }, [pathname, navigation])
+}
+
 export function AppShell() {
   const online = useOnline()
   useShortcuts()
+  useNewScreenAtTop()
   return (
     <div className="min-h-dvh md:flex">
       <Sidebar online={online} />

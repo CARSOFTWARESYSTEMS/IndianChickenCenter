@@ -119,7 +119,8 @@ A backup holds every record and every customer's balance from a **full recompute
 | `src/data/__tests__/docs.test.ts` | DOC-01–07: how records are stored (loading split, rate change, trip id, close totals, month-end closure, invites) |
 | `src/data/__tests__/diff.test.ts` | DIFF-01–07: what each command saves, and in which batches |
 | `src/data/__tests__/rules-constants.test.ts` | RC-01–02: the role table and value lists in `firestore.rules` match the engine |
-| `tests/rules/*.test.ts` (emulator) | S-01–S-10 from the plan, R-01–R-16 (drivers, visibility, invites, settings, customers, vehicles, trips, loading, rates, month end, opening balance, fuel, shop sales, orders, cross-trip reads) |
+| `tests/rules/*.test.ts` (emulator) | S-01–S-10 from the plan, R-01–R-17 (drivers, visibility, invites, settings, customers, vehicles, trips, loading, rates, month end, opening balance, fuel, shop sales, orders, cross-trip reads, shop map pin) |
+| `__tests__/location.test.ts` | LOC-01–05: the shop's map pin typed or pasted (numbers, Google Maps links, short links refused), 6 decimal places, both numbers or none (not money) |
 | `tests/sync/sync.test.ts` (emulator) | SY-01–SY-06 from the plan, SY-07–10 (month end from a window, loading rate kept apart, saves left over after a restart, bill numbers online) |
 
 Expected values are literal numbers checked by hand, never computed by the engine. To confirm the tests can fail, the engine was broken on purpose and then restored:

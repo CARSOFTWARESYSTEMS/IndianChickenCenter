@@ -24,6 +24,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:emulators", "--", "--port", "5174", "--strictPort"],
       "port": 5174
+    },
+    {
+      "name": "preview-emulators",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "preview:emulators", "--", "--port", "4174", "--strictPort"],
+      "port": 4174,
+      "url": "http://127.0.0.1:4174"
     }
   ]
 }

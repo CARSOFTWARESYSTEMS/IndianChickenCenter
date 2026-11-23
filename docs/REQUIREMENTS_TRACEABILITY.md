@@ -9,7 +9,7 @@ The full 36-row traceability matrix stays in `Indian_Chicken_Center_Plan.md` (Pa
 | ID | Question | Owner's answer | Status | Built as |
 | --- | --- | --- | --- | --- |
 | U-01 | Drop paise or round? | Round (8,076.80 → 8,077) | Resolved | Default rounding is now round to the rupee; it can still be changed in Settings. The source customer now ends at ₹10,780 instead of ₹10,778 (G-01). |
-| U-02 | Shop pin or vehicle tracking? | Both | Needs a platform choice | Shop map pin is in Settings. Live vehicle position: see Open questions 1. |
+| U-02 | Shop pin or vehicle tracking? | Both | Needs a platform choice | Shop map pin: More → Business profile, from the phone's location or typed/pasted when location is blocked (P8, DV-07). Live vehicle position: not built; see Open questions 1. |
 | U-03 | Activation details = own business? | Yes | Resolved | Business details live in Settings. |
 | U-04 | Contact details on bills | Settings for owner name, phone, email, WhatsApp and all details | Resolved | Settings hold all contact details, with a show/hide switch per field for bills. The bill header is built from Settings (G-08, G-09). |
 | U-05 | Unsold kg at trip end | Sold at the shop, or shown as wastage | Resolved | New shop-sale entry (kg × rate, payment method) plus wastage. The trip closes only when 0 kg are left (G-05). |

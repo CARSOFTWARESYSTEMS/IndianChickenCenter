@@ -1,10 +1,11 @@
 /** More: demo controls, Reports · Backup · Business profile · Settings · Help & install, and developer pages. */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router'
 import { InstallCard } from '../app/InstallCard'
+import { formatBytes, keepStorage, storageInfo, type StorageInfo } from '../app/device'
 import { usePreferences, useT, type ThemeChoice } from '../app/preferences'
 import { useToast } from '../app/toast'
-import { errorText } from '../i18n/labels'
+import { errorText, fill } from '../i18n/labels'
 import { parsePricePerLitre, parseRatePerKg, ROUNDING_POLICIES, type BusinessSettings, type Language, type RoundingPolicyId } from '../domain'
 import { saveSettings, setActor } from '../store/commands'
 import { useSession } from '../firebase/session'
@@ -14,6 +15,7 @@ import { StickyAction } from '../ui/StickyAction'
 import { Button } from '../ui/Button'
 import { Chips, Field, Segmented, Switch } from '../ui/controls'
 import { Card, EmptyState, PageHeader, Pill, Row, Section } from '../ui/primitives'
+import { MapPinField } from './mapPin'
 import { errorOf, rupeesText, valueOf } from './shared'
 
 const LANGUAGE_OPTIONS: readonly { value: Language; label: string }[] = [
@@ -155,6 +157,7 @@ export function BusinessProfilePage() {
           />
           <Field label={t.profile.ownerName} value={draft.contact.ownerName} onChange={(e) => setContact({ ownerName: e.target.value })} />
           <Field label={t.profile.shopLocation} value={draft.shopLocation.label} onChange={(e) => set({ shopLocation: { ...draft.shopLocation, label: e.target.value } })} />
+          <MapPinField value={draft.shopLocation} onChange={(shopLocation) => set({ shopLocation })} />
           <Field label={t.profile.phones} inputMode="tel" value={phones} onChange={(e) => setPhones(e.target.value)} />
           <Field label={t.profile.whatsapp} inputMode="tel" value={text(draft.contact.whatsapp)} onChange={(e) => setContact({ whatsapp: e.target.value })} />
           <Field label={t.profile.email} inputMode="email" value={text(draft.contact.email)} onChange={(e) => setContact({ email: e.target.value })} />
@@ -233,7 +236,54 @@ export function SettingsPage() {
           <Segmented label={t.settings.appearance} value={theme} options={themes} onChange={setTheme} />
         </div>
       </Section>
+      <PhoneStorage />
     </>
+  )
+}
+
+/** DV-06: whether the browser keeps the entries saved on this phone, and how much it holds. */
+function PhoneStorage() {
+  const t = useT()
+  const [info, setInfo] = useState<StorageInfo>()
+  const [declined, setDeclined] = useState(false)
+  useEffect(() => {
+    let live = true
+    void storageInfo().then((i) => live && setInfo(i))
+    return () => {
+      live = false
+    }
+  }, [])
+  if (!info) return null
+  const ask = async () => {
+    const kept = await keepStorage()
+    setInfo(await storageInfo())
+    // Safari and Chrome answer without asking the person; say so rather than leave the button doing nothing.
+    setDeclined(!kept)
+  }
+  return (
+    <Section header={t.settings.device} footer={info.kept ? t.settings.keptNote : t.settings.clearNote}>
+      <Row
+        title={t.settings.offlineData}
+        {...(info.usedBytes !== undefined ? { subtitle: fill(t.settings.storageUsed, { size: formatBytes(info.usedBytes) }) } : {})}
+        value={
+          <Pill tone={info.kept ? 'received' : info.kept === false ? 'due' : 'neutral'}>
+            {info.kept ? t.settings.kept : info.kept === false ? t.settings.mayBeCleared : t.settings.unknown}
+          </Pill>
+        }
+      />
+      {info.kept === false &&
+        (declined ? (
+          <p role="status" className="px-4 pb-3 text-sub text-due">
+            {t.settings.declined}
+          </p>
+        ) : (
+          <div className="px-4 pb-3">
+            <Button variant="secondary" block onClick={() => void ask()}>
+              {t.settings.keep}
+            </Button>
+          </div>
+        ))}
+    </Section>
   )
 }
 

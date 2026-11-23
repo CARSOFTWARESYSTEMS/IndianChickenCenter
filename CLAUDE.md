@@ -34,6 +34,7 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - `src/i18n/labels.ts` — every screen label, English + Kannada; the type makes a missing Kannada key a build error.
   Read labels with `useT()`; never hard-code screen text.
 - `src/app/` — shell (bottom tabs < 768 px, sidebar ≥ 768 px), preferences (language, theme), install + update prompts, shortcuts.
+  `device.ts` (P8): asks the browser to keep stored data (DV-06, shown in Settings → This phone) and reads the phone's location (DV-07).
 - `src/store/` — app state and commands. `state.ts` (types + demo seed built through the engine), `commands.ts`
   (every change goes through engine functions; screens call `dispatch(command)`), `selectors.ts` (read views),
   `store.ts` (one store: demo state in localStorage, or a backend attached by the cloud store).
@@ -44,6 +45,9 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - `src/pages/` — today, trips (+ tripSheets), customers, bill, ledger, more (profile, settings, help), people (owner),
   auth (sign-in, not on the team, owner set-up), design gallery, engine check.
   Sheets are rendered only while open, so each opening gets fresh ids (plan §5).
+- `src/domain/location.ts` — the shop's map pin: typed numbers or a Google Maps link, 6 decimal places (coordinates, not money).
+  Screen: `src/pages/mapPin.tsx` on the Business profile.
+- `docs/TEST_REPORT.md` (P8, Gate C) — automated results, engine checks on the Mac, the DV-* real-device table, device log and steps.
 - `src/domain/billDocument.ts` — IssuedBill (number per financial year, content frozen), billDocument (the rows the
   screen and PDF both show), paginate. `src/pdf/billPdf.ts` (lazy) draws pages on a canvas (browser fonts handle
   Kannada and ₹) and puts them in an A4 PDF with pdf-lib; shareOrDownload uses Web Share with files, else downloads.
@@ -73,6 +77,8 @@ Firebase Hosting (Spark), pdf-lib for bills. No Cloud Functions, no paid APIs, n
 - `npm run rules:generate` — rewrite the generated block in `firestore.rules` after changing roles or value lists
 - `npm run typecheck`
 - `npm run dev` — Vite dev server, demo mode
+- `npm run build:emulators` + `npm run preview:emulators -- --port 4174` — production build (service worker) against the emulators
+  at http://127.0.0.1:4174 ("preview-emulators" in .claude/launch.json); the iOS simulators reach it at the same address
 - `npm run emulators` + `npm run dev:emulators -- --port 5174` — the app against local Auth/Firestore emulators at
   http://127.0.0.1:5174 (data kept in `.emulator-data/`); `node scripts/emulator-add-user.mjs <email> owner "<name>"`
   makes an emulator account the owner
@@ -102,4 +108,7 @@ ST-06, PDF-01) and 42 emulator (adds BR-01–04 and SY-10).
 P7 backup + restore built (branch p7-backup): owner's "Back up now" to Drive (drive.file), read back and checked
 before "Verified"; check any backup file; compare with the cloud; restore tool adds only missing records (D-29).
 Tests: 121 unit (adds B-01–B-06 preview) and 45 emulator (adds B-04, B-06, B-06b).
-Next: Gate B with the owner (README "Trying the prototype"), then P8 device checks and P9 deploy.
+P8 device checks prepared (branch p8-devices): persistent storage request + Settings → This phone (DV-06), shop map pin from
+location or typed/pasted (DV-07), docs/TEST_REPORT.md with the DV matrix and steps. Checked in Chrome's engine and on the
+iOS 17.5 simulators (iPhone SE, iPad) in Safari; no real device checked yet. Tests: 126 unit (adds LOC-01–05) and 46 emulator (adds R-17).
+Next: Gate B with the owner, P9 deploy, then the DV-* checks on real devices for Gate C.

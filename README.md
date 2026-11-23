@@ -58,7 +58,11 @@ npm run dev
   - The owner taps "Back up now": every record goes to one file in their Google Drive. The app then reads the copy back and checks it, and only then shows "Verified". Only the `drive.file` permission is asked for.
   - Any backup can be checked again: checksum, counts, every balance recomputed from all entries, and every month-end snapshot. It can also be compared with the cloud to see what is missing.
   - Restoring adds back only missing records, with a tool on a computer (`npm run restore`); nothing is ever overwritten.
-- **Next:** Gate B with the owner, then P8 (checks on real phones and computers).
+- **P8 device checks:** prepared; the real-device checks are not done yet.
+  - `docs/TEST_REPORT.md` holds the automated results, the checks run in Chrome's engine and on the iPhone and iPad simulators, and the table of real-device checks (DV-01 to DV-08) with step-by-step instructions. Nothing there is marked working on a device yet.
+  - The app now asks the browser to keep the entries saved on the phone; More → Settings → This phone shows whether it does.
+  - The shop's map pin can be set in More → Business profile from the phone's location, or typed or pasted when location is blocked.
+- **Next:** Gate B with the owner, deploy (P9) so the real-device checks can be run on the app's real address, then Gate C.
 
 ## Trying the prototype (Gate B)
 
